@@ -173,6 +173,18 @@ void GuiDashboard::render(
 
     ImGui::TextUnformatted("LabGP - Gestao de Projetos de Pesquisa");
     ImGui::Text("Workspace: %s", workspaceRoot.c_str());
+    if (ImGui::Button("Selecionar Pasta")) {
+        m_showWorkspaceModal = true;
+        std::snprintf(m_workspacePathBuf.data(), m_workspacePathBuf.size(), "%s", workspaceRoot.c_str());
+        m_workspaceNavPath = workspaceRoot;
+        ImGui::OpenPopup("workspace_modal");
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Reescanear")) {
+        if (requestRescan) {
+            *requestRescan = true;
+        }
+    }
     if (!workspaceFeedback.empty()) {
         ImGui::TextColored(ImVec4(0.55f, 0.82f, 0.55f, 1.0f), "%s", workspaceFeedback.c_str());
     }
