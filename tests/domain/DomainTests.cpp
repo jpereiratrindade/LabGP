@@ -46,7 +46,10 @@ int main() {
         .hasFormatLint = true,
     });
 
-    require(store.moveStatus("T-1", ResearchStatus::Execution), "deve mover status");
+    require(!store.moveStatus("T-1", ResearchStatus::Execution), "nao deve pular fluxo Proposta->Execucao");
+    require(store.moveStatus("T-1", ResearchStatus::InReview), "deve mover Proposta->Em avaliacao");
+    require(store.moveStatus("T-1", ResearchStatus::Approved), "deve mover Em avaliacao->Aprovado");
+    require(store.moveStatus("T-1", ResearchStatus::Execution), "deve mover Aprovado->Execucao");
     require(store.all().front().status == ResearchStatus::Execution, "status atualizado");
 
     const auto score = computeScore(store.all().front());
