@@ -10,6 +10,7 @@ option(LABGP_WARNINGS_AS_ERRORS "Treat warnings as errors" OFF)
 add_library(labgp_domain
     src/domain/ResearchProjectStore.cpp
     src/domain/Scoring.cpp
+    src/domain/InventoryScanner.cpp
 )
 
 target_include_directories(labgp_domain
@@ -28,6 +29,9 @@ endif()
 add_executable(LabGP
     src/main.cpp
     src/app/AppRuntime.cpp
+    src/ui/AppUI.cpp
+    src/ui/ListView.cpp
+    src/ui/KanbanView.cpp
 )
 
 target_link_libraries(LabGP PRIVATE labgp_domain)
@@ -39,7 +43,17 @@ add_executable(LabGPDomainTests
 target_link_libraries(LabGPDomainTests PRIVATE labgp_domain)
 target_include_directories(LabGPDomainTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
+add_executable(LabGPConsoleUiTests
+    tests/ui/ConsoleUiTests.cpp
+    src/ui/AppUI.cpp
+    src/ui/ListView.cpp
+    src/ui/KanbanView.cpp
+)
+target_link_libraries(LabGPConsoleUiTests PRIVATE labgp_domain)
+target_include_directories(LabGPConsoleUiTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
 include(CTest)
 if(BUILD_TESTING)
     add_test(NAME LabGPDomainTests COMMAND LabGPDomainTests)
+    add_test(NAME LabGPConsoleUiTests COMMAND LabGPConsoleUiTests)
 endif()
