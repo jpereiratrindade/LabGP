@@ -6,7 +6,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdio>
+#include <filesystem>
 #include <string>
+#include <vector>
 
 namespace labgp::ui {
 
@@ -137,7 +140,8 @@ void GuiDashboard::render(
     const std::vector<domain::ResearchProject>& projects,
     const std::vector<domain::InventoryEntry>& inventory,
     const std::string& workspaceRoot,
-    bool* requestPickWorkspace
+    std::string* requestApplyWorkspacePath,
+    const std::string& workspaceFeedback
 ) const {
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize, ImGuiCond_Always);
@@ -151,9 +155,10 @@ void GuiDashboard::render(
     if (ImGui::BeginMenuBar()) {
         if (ImGui::BeginMenu("Arquivo")) {
             if (ImGui::MenuItem("Selecionar pasta de projetos...")) {
-                if (requestPickWorkspace) {
-                    *requestPickWorkspace = true;
-                }
+                m_showWorkspaceModal = true;
+                std::snprintf(m_workspacePathBuf.data(), m_workspacePathBuf.size(), "%s", workspaceRoot.c_str());
+                m_workspaceNavPath = workspaceRoot;
+                ImGui::OpenPopup("workspace_modal");
             }
             ImGui::EndMenu();
         }
@@ -162,7 +167,77 @@ void GuiDashboard::render(
 
     ImGui::TextUnformatted("LabGP - Gestao de Projetos de Pesquisa");
     ImGui::Text("Workspace: %s", workspaceRoot.c_str());
+    if (!workspaceFeedback.empty()) {
+        ImGui::TextColored(ImVec4(0.55f, 0.82f, 0.55f, 1.0f), "%s", workspaceFeedback.c_str());
+    }
     ImGui::Separator();
+
+    if (m_showWorkspaceModal) {
+        namespace fs = std::filesystem;
+
+        ImGui::SetNextWindowSize(ImVec2(860, 540), ImGuiCond_FirstUseEver);
+        if (ImGui::BeginPopupModal("workspace_modal", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            if (m_workspaceNavPath.empty()) m_workspaceNavPath = workspaceRoot;
+
+            ImGui::TextWrapped("Selecione a pasta que contem os repositorios de projetos:");
+            ImGui::InputText("Caminho", m_workspacePathBuf.data(), m_workspacePathBuf.size());
+
+            if (ImGui::Button("Ir para caminho digitado")) {
+                const fs::path typed(m_workspacePathBuf.data());
+                std::error_code ec;
+                if (fs::exists(typed, ec) && fs::is_directory(typed, ec)) {
+                    m_workspaceNavPath = typed.string();
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Subir um nivel")) {
+                fs::path p(m_workspaceNavPath);
+                p = p.parent_path();
+                if (!p.empty()) {
+                    m_workspaceNavPath = p.string();
+                    std::snprintf(m_workspacePathBuf.data(), m_workspacePathBuf.size(), "%s", m_workspaceNavPath.c_str());
+                }
+            }
+
+            ImGui::Separator();
+            ImGui::Text("Navegando: %s", m_workspaceNavPath.c_str());
+            ImGui::BeginChild("dirs_list", ImVec2(820, 360), true);
+
+            std::vector<std::string> children;
+            std::error_code ec;
+            for (const auto& entry : fs::directory_iterator(fs::path(m_workspaceNavPath), fs::directory_options::skip_permission_denied, ec)) {
+                if (entry.is_directory(ec)) {
+                    children.push_back(entry.path().filename().string());
+                }
+            }
+            std::sort(children.begin(), children.end());
+
+            for (const auto& name : children) {
+                if (ImGui::Selectable(name.c_str())) {
+                    fs::path next = fs::path(m_workspaceNavPath) / name;
+                    m_workspaceNavPath = next.string();
+                    std::snprintf(m_workspacePathBuf.data(), m_workspacePathBuf.size(), "%s", m_workspaceNavPath.c_str());
+                }
+            }
+
+            ImGui::EndChild();
+            ImGui::Separator();
+
+            if (ImGui::Button("Usar esta pasta")) {
+                if (requestApplyWorkspacePath) {
+                    *requestApplyWorkspacePath = m_workspaceNavPath;
+                }
+                m_showWorkspaceModal = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancelar")) {
+                m_showWorkspaceModal = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+    }
 
     if (ImGui::BeginTabBar("labgp_tabs")) {
         if (ImGui::BeginTabItem("Projetos")) {

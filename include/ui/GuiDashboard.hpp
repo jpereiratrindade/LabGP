@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <string>
 #include <vector>
 
@@ -14,8 +15,14 @@ public:
         const std::vector<domain::ResearchProject>& projects,
         const std::vector<domain::InventoryEntry>& inventory,
         const std::string& workspaceRoot,
-        bool* requestPickWorkspace
+        std::string* requestApplyWorkspacePath,
+        const std::string& workspaceFeedback
     ) const;
+
+private:
+    mutable bool m_showWorkspaceModal{false};
+    mutable std::array<char, 1024> m_workspacePathBuf{};
+    mutable std::string m_workspaceNavPath;
 };
 
 } // namespace labgp::ui

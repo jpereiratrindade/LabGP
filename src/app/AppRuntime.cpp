@@ -357,9 +357,10 @@ bool runGui(AppData* data) {
     ImGui_ImplSDLRenderer2_Init(renderer);
 
     ui::GuiDashboard dashboard;
+    std::string workspaceFeedback;
     bool done = false;
     while (!done) {
-        bool requestPickWorkspace = false;
+        std::string requestApplyWorkspacePath;
         SDL_Event event;
         while (SDL_PollEvent(&event) != 0) {
             ImGui_ImplSDL2_ProcessEvent(&event);
@@ -373,12 +374,20 @@ bool runGui(AppData* data) {
         ImGui_ImplSDLRenderer2_NewFrame();
         ImGui::NewFrame();
 
-        dashboard.render(data->store.all(), data->inventory, data->workspaceRoot, &requestPickWorkspace);
+        dashboard.render(
+            data->store.all(),
+            data->inventory,
+            data->workspaceRoot,
+            &requestApplyWorkspacePath,
+            workspaceFeedback
+        );
 
-        if (requestPickWorkspace) {
-            const std::string picked = selectDirectoryWithSystemDialog(data->workspaceRoot);
-            if (!picked.empty() && std::filesystem::exists(picked) && std::filesystem::is_directory(picked)) {
-                *data = buildAppData(picked);
+        if (!requestApplyWorkspacePath.empty()) {
+            if (std::filesystem::exists(requestApplyWorkspacePath) && std::filesystem::is_directory(requestApplyWorkspacePath)) {
+                *data = buildAppData(requestApplyWorkspacePath);
+                workspaceFeedback = "Workspace atualizado manualmente.";
+            } else {
+                workspaceFeedback = "Pasta invalida. Verifique o caminho informado.";
             }
         }
 
