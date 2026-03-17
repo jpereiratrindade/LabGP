@@ -367,9 +367,48 @@ bool containsToken(const std::string& text, const std::string& token) {
     return text.find(token) != std::string::npos;
 }
 
+bool containsAnyToken(
+    const std::vector<std::string>& names,
+    const std::string& corpus,
+    std::initializer_list<const char*> tokens
+) {
+    for (const char* token : tokens) {
+        const std::string t = normalizeSearchText(token);
+        if (containsToken(names, t) || containsToken(corpus, t)) return true;
+    }
+    return false;
+}
+
 bool lineHasKeyword(const std::string& lowerLine, const std::vector<std::string>& keywords) {
     for (const auto& k : keywords) {
         if (lowerLine.find(normalizeSearchText(k)) != std::string::npos) return true;
+    }
+    return false;
+}
+
+bool looksLikeAnySectionHeader(const std::string& lowerLine) {
+    static const std::vector<std::string> headers = {
+        "resumo",
+        "objetivos",
+        "contribuicoes para inovacao",
+        "contribuicoes para inovacao",
+        "atividades de pesquisa",
+        "metodologia",
+        "resultados esperados",
+        "resultados",
+        "equipe",
+        "orcamento",
+        "item do dispendio",
+        "cronograma",
+    };
+    std::string line = trimCopy(lowerLine);
+    if (line.empty()) return false;
+    if (line.size() > 120) return false;
+    for (const auto& h : headers) {
+        const std::string hn = normalizeSearchText(h);
+        if (line == hn) return true;
+        if (line.rfind(hn + ":", 0) == 0) return true;
+        if (line.rfind("# " + hn, 0) == 0) return true;
     }
     return false;
 }
@@ -400,6 +439,7 @@ std::string extractSectionByKeywords(const std::string& rawText, const std::vect
                 continue;
             }
             if (!next.empty() && next[0] == '#') break;
+            if (looksLikeAnySectionHeader(normalizeSearchText(next))) break;
             if (next.size() > 2 && next[0] == '-' && next[1] == ' ') next = trimCopy(next.substr(2));
             out.push_back(next);
             if (out.size() >= 8) break;
@@ -418,6 +458,24 @@ std::vector<std::string> extractTeamMembers(const std::string& rawText) {
     };
     std::vector<std::string> members;
     std::unordered_set<std::string> seen;
+    auto seemsAdministrativeLine = [](const std::string& lower) {
+        return lower.find("orcamento") != std::string::npos ||
+               lower.find("dispendio") != std::string::npos ||
+               lower.find("item") != std::string::npos ||
+               lower.find("total") != std::string::npos ||
+               lower.find("ano previsto") != std::string::npos ||
+               lower.find("status do resultado") != std::string::npos ||
+               lower.find("trl") != std::string::npos ||
+               lower.find("r$") != std::string::npos ||
+               lower.find("%") != std::string::npos;
+    };
+    auto hasTooManyDigits = [](const std::string& s) {
+        int digits = 0;
+        for (unsigned char c : s) {
+            if (std::isdigit(c)) ++digits;
+        }
+        return digits >= 4;
+    };
 
     for (int i = 0; i < n; ++i) {
         const std::string line = trimCopy(lines[i]);
@@ -434,9 +492,12 @@ std::vector<std::string> extractTeamMembers(const std::string& rawText) {
                 continue;
             }
             if (!next.empty() && next[0] == '#') break;
+            if (looksLikeAnySectionHeader(normalizeSearchText(next))) break;
             if (next.size() > 2 && next[0] == '-' && next[1] == ' ') next = trimCopy(next.substr(2));
             if (next.empty()) continue;
             const std::string normalized = normalizeSearchText(next);
+            if (seemsAdministrativeLine(normalized)) continue;
+            if (hasTooManyDigits(next)) continue;
             if (seen.insert(normalized).second) {
                 members.push_back(next);
             }
@@ -464,11 +525,7 @@ int countGroups(const std::vector<std::vector<std::string>>& groups, const std::
 
 ResearchStatus inferStatusFromSignals(const std::vector<std::string>& names, const std::string& corpus) {
     auto hasAny = [&](std::initializer_list<const char*> tokens) {
-        for (const char* token : tokens) {
-            const std::string t = token;
-            if (containsToken(names, t) || containsToken(corpus, t)) return true;
-        }
-        return false;
+        return containsAnyToken(names, corpus, tokens);
     };
 
     if (hasAny({"termo_de_encerramento", "projeto_encerrado", "prestacao_final_aprovada", "status: encerrado"})) {
@@ -599,22 +656,23 @@ std::vector<InventoryEntry> InventoryScanner::scan(const std::string& workspaceR
         } else {
             const auto& names = dossierNames;
             const std::string& corpus = dossierSearchCorpus;
+            const bool hasCorpusText = !trimCopy(corpus).empty();
             auto hasToken = [&](const std::string& token) {
-                return containsToken(names, token) || containsToken(corpus, token);
+                return containsAnyToken(names, corpus, {token.c_str()});
             };
             probe.softwareIntensive = false;
-            probe.hasReadme = hasToken("readme") || hasToken("projeto") || hasToken("proposta");
-            probe.hasMethodology = hasToken("metod") || hasToken("projeto") || hasToken("proposta");
-            probe.hasWorkPlan = hasToken("plano") || hasToken("proposta") || hasToken("projeto");
-            probe.hasTimeline = hasToken("cronograma") || hasToken("edital");
+            probe.hasReadme = hasToken("readme") || hasToken("resumo") || (!names.empty() && !hasCorpusText);
+            probe.hasMethodology = hasToken("metod") || (!hasCorpusText && (hasToken("proposta") || hasToken("projeto")));
+            probe.hasWorkPlan = hasToken("plano de trabalho") || hasToken("plano") || (!hasCorpusText && hasToken("proposta"));
+            probe.hasTimeline = hasToken("cronograma") || (!hasCorpusText && (hasToken("submetido") || hasToken("submissao")));
             probe.hasBudgetPlan = hasToken("orc") || hasToken("budget");
             probe.hasValidationPlan = hasToken("avali") || hasToken("valid");
             probe.hasDataGovernance = hasToken("dados") || hasToken("govern");
             probe.hasTerritorialNetwork = hasToken("territorial") || hasToken("sait");
             probe.hasPublicPolicyAlignment = hasToken("politica") || hasToken("publica");
-            probe.plannedDeliverables = 4;
-            probe.deliveredDeliverables = 1;
-            probe.reviewMeetings = 1;
+            probe.plannedDeliverables = 0;
+            probe.deliveredDeliverables = 0;
+            probe.reviewMeetings = 0;
         }
 
         InventoryEntry inv;
@@ -625,6 +683,7 @@ std::vector<InventoryEntry> InventoryScanner::scan(const std::string& workspaceR
             const auto& names = dossierNames;
             const std::string& rawCorpus = dossierRawCorpus;
             const std::string& corpus = dossierSearchCorpus;
+            const bool hasExtractedText = !trimCopy(rawCorpus).empty();
             inv.interpretedDocuments = std::move(dossierInterpretedDocs);
             inv.inferredStatus = inferStatusFromSignals(names, corpus);
 
@@ -634,6 +693,18 @@ std::vector<InventoryEntry> InventoryScanner::scan(const std::string& workspaceR
             inv.researchActivities = extractSectionByKeywords(rawCorpus, {"atividades de pesquisa", "atividades", "metodologia", "plano de trabalho"});
             inv.expectedResults = extractSectionByKeywords(rawCorpus, {"resultados esperados", "resultados", "entregaveis", "outcomes"});
             inv.teamMembers = extractTeamMembers(rawCorpus);
+            if (!hasExtractedText && !inv.interpretedDocuments.empty()) {
+                inv.summary = "Sem texto extraivel via pdftotext nos PDFs atuais. Curadoria mantida por nome/hash; revisar qualidade do PDF (OCR).";
+            }
+            inv.interpretedDocsTotal = static_cast<int>(inv.interpretedDocuments.size());
+            inv.interpretedDocsIncluded = 0;
+            for (const auto& d : inv.interpretedDocuments) {
+                if (d.includedInCorpus) ++inv.interpretedDocsIncluded;
+                if (d.curationTag == "nucleo_projeto") ++inv.curatedNucleoProjeto;
+                else if (d.curationTag == "evidencia_execucao") ++inv.curatedEvidenciaExecucao;
+                else if (d.curationTag == "suporte_admin") ++inv.curatedSuporteAdmin;
+                else ++inv.curatedComplementar;
+            }
 
             const std::vector<std::vector<std::string>> innovationGroups = {
                 {"inov", "sociotecnica", "tecnolog"},
@@ -653,6 +724,38 @@ std::vector<InventoryEntry> InventoryScanner::scan(const std::string& workspaceR
             inv.innovationSignals = countGroups(innovationGroups, names, corpus);
             inv.activitySignals = countGroups(activityGroups, names, corpus);
             inv.plannedResultsSignals = countGroups(resultGroups, names, corpus);
+
+            probe.hasReadme = probe.hasReadme || !inv.summary.empty();
+            probe.hasMethodology = probe.hasMethodology || !inv.researchActivities.empty();
+            probe.hasWorkPlan = probe.hasWorkPlan || (inv.activitySignals > 0);
+            probe.hasTimeline = probe.hasTimeline || containsAnyToken(names, corpus, {"cronograma", "trimestre", "prazo"});
+            probe.hasValidationPlan = probe.hasValidationPlan || (inv.plannedResultsSignals > 0);
+            probe.hasDataGovernance = probe.hasDataGovernance || containsAnyToken(names, corpus, {"base de dados", "governanca de dados", "ddc"});
+            probe.hasPublicPolicyAlignment = probe.hasPublicPolicyAlignment || containsAnyToken(names, corpus, {"politica publica", "subsidiar", "instrumento"});
+
+            const int planned = std::clamp(2 + inv.activitySignals + inv.plannedResultsSignals, 2, 8);
+            int delivered = countGroups(
+                {
+                    {"entreg", "concluid", "finalizado"},
+                    {"validado", "aprovado", "homologado"},
+                    {"publicado", "divulgado", "implantado"},
+                },
+                names,
+                corpus
+            );
+            if (inv.inferredStatus == ResearchStatus::Approved ||
+                inv.inferredStatus == ResearchStatus::Execution ||
+                inv.inferredStatus == ResearchStatus::Analysis ||
+                inv.inferredStatus == ResearchStatus::Publication ||
+                inv.inferredStatus == ResearchStatus::Closed) {
+                delivered = std::max(delivered, 1);
+            }
+            if (inv.inferredStatus == ResearchStatus::Publication || inv.inferredStatus == ResearchStatus::Closed) {
+                delivered = std::max(delivered, planned - 1);
+            }
+            probe.plannedDeliverables = planned;
+            probe.deliveredDeliverables = std::clamp(delivered, 0, planned);
+            probe.reviewMeetings = countGroups({{"reuniao", "oficina", "workshop", "monitoramento"}}, names, corpus);
         } else {
             inv.inferredStatus = ResearchStatus::Proposal;
         }

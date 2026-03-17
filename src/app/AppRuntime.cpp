@@ -268,6 +268,20 @@ AppData buildAppData(const std::string& workspaceRoot, bool includeDemoProjects)
 
     for (size_t i = 0; i < data.inventory.size() && i < 6; ++i) {
         const auto& entry = data.inventory[i];
+        const bool hasSummary = !entry.summary.empty();
+        const bool hasObjectives = !entry.objectives.empty();
+        const bool hasActivities = !entry.researchActivities.empty();
+        const bool hasExpected = !entry.expectedResults.empty();
+        const bool hasInnovation = !entry.innovationContributions.empty();
+        const bool hasTeam = !entry.teamMembers.empty();
+        const int plannedDeliverables = std::clamp(2 + entry.activitySignals + entry.plannedResultsSignals, 2, 8);
+        int deliveredDeliverables = std::clamp(entry.plannedResultsSignals, 0, plannedDeliverables);
+        if (entry.inferredStatus != domain::ResearchStatus::Proposal &&
+            entry.inferredStatus != domain::ResearchStatus::InReview) {
+            deliveredDeliverables = std::max(deliveredDeliverables, 1);
+        }
+        const int reviewMeetings = std::max(0, entry.activitySignals - 1);
+
         data.store.add(ResearchProject{
             .id = "INV-" + std::to_string(i + 1),
             .title = "Integracao: " + entry.repoName,
@@ -280,20 +294,20 @@ AppData buildAppData(const std::string& workspaceRoot, bool includeDemoProjects)
             .status = entry.inferredStatus,
             .openImpediments = entry.score.total >= 60 ? 0 : 1,
             .softwareIntensive = entry.score.reliabilityApplicable,
-            .hasMethodology = (entry.score.maturity >= 25) || (entry.activitySignals > 0),
-            .hasWorkPlan = (entry.score.maturity >= 75) || (entry.activitySignals > 1),
-            .hasTimeline = (entry.score.maturity >= 50) || (entry.activitySignals > 0),
-            .hasBudgetPlan = (entry.score.maturity >= 100),
-            .plannedDeliverables = 4,
-            .deliveredDeliverables = std::min(4, std::max(entry.plannedResultsSignals, entry.score.total / 25)),
-            .reviewMeetings = entry.score.maturity >= 50 ? 1 : 0,
-            .hasTerritorialNetwork = entry.activitySignals > 1,
-            .hasDataGovernance = entry.score.maturity >= 100,
-            .hasValidationPlan = (entry.score.maturity >= 50) || (entry.plannedResultsSignals > 0),
-            .hasPublicPolicyAlignment = entry.innovationSignals > 0,
-            .hasReadme = entry.score.operational >= 35,
-            .hasCi = entry.score.operational >= 70,
-            .hasTests = entry.score.operational >= 100,
+            .hasMethodology = hasActivities || hasObjectives,
+            .hasWorkPlan = hasActivities || (entry.activitySignals > 0),
+            .hasTimeline = entry.activitySignals > 0 || hasActivities,
+            .hasBudgetPlan = entry.curatedSuporteAdmin > 0 || entry.inferredStatus == domain::ResearchStatus::Approved,
+            .plannedDeliverables = plannedDeliverables,
+            .deliveredDeliverables = deliveredDeliverables,
+            .reviewMeetings = reviewMeetings,
+            .hasTerritorialNetwork = entry.activitySignals > 1 || hasTeam,
+            .hasDataGovernance = hasSummary && (entry.curatedSuporteAdmin > 0 || entry.activitySignals > 0),
+            .hasValidationPlan = hasExpected || (entry.plannedResultsSignals > 0),
+            .hasPublicPolicyAlignment = hasInnovation || (entry.innovationSignals > 0),
+            .hasReadme = hasSummary || hasObjectives,
+            .hasCi = false,
+            .hasTests = false,
             .hasAdr = entry.score.maturity >= 25,
             .hasDdd = entry.score.maturity >= 50,
             .hasDai = entry.score.maturity >= 75,

@@ -93,7 +93,20 @@ void renderInterpretedDocuments(const std::vector<domain::InterpretedDocument>& 
             d.curationTag.empty() ? "-" : d.curationTag.c_str(),
             d.relevanceScore,
             d.includedInCorpus ? "incluido" : "excluido");
+        if (d.includedInCorpus && d.textBytes == 0) {
+            ImGui::TextColored(ImVec4(0.93f, 0.72f, 0.35f, 1.0f), "Aviso: PDF sem texto extraivel (OCR pode ser necessario).");
+        }
     }
+}
+
+void renderCurationSummary(const domain::InventoryEntry& inv) {
+    ImGui::TextDisabled("Curadoria de documentos");
+    ImGui::Text("Corpus: %d/%d", inv.interpretedDocsIncluded, inv.interpretedDocsTotal);
+    ImGui::Text("Nucleo: %d | Evidencia: %d | Suporte: %d | Complementar: %d",
+        inv.curatedNucleoProjeto,
+        inv.curatedEvidenciaExecucao,
+        inv.curatedSuporteAdmin,
+        inv.curatedComplementar);
 }
 
 void renderProjectsTab(
@@ -235,6 +248,8 @@ void renderProjectsTab(
         renderField("Instituicao", selected->institution);
         if (inv) {
             ImGui::Separator();
+            renderCurationSummary(*inv);
+            ImGui::Separator();
             renderField("Resumo", inv->summary);
             renderField("Objetivos", inv->objectives);
             renderField("Contribuicoes para Inovacao", inv->innovationContributions);
@@ -321,7 +336,7 @@ void renderInventoryTab(const std::vector<domain::InventoryEntry>& inventory) {
     if (tableWidth < 300.f) tableWidth = ImGui::GetContentRegionAvail().x;
 
     ImGui::BeginChild("##inventory_table_region", ImVec2(tableWidth, availableHeight), false);
-    if (ImGui::BeginTable("inventory_table", 12, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
+    if (ImGui::BeginTable("inventory_table", 13, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
         ImGui::TableSetupColumn("Repo");
         ImGui::TableSetupColumn("Origem");
         ImGui::TableSetupColumn("Total");
@@ -333,6 +348,7 @@ void renderInventoryTab(const std::vector<domain::InventoryEntry>& inventory) {
         ImGui::TableSetupColumn("Inov");
         ImGui::TableSetupColumn("Ativ");
         ImGui::TableSetupColumn("ResPrev");
+        ImGui::TableSetupColumn("Curad");
         ImGui::TableSetupColumn("Fluxo (Status inferido)");
         ImGui::TableHeadersRow();
 
@@ -355,7 +371,8 @@ void renderInventoryTab(const std::vector<domain::InventoryEntry>& inventory) {
             ImGui::TableSetColumnIndex(8); ImGui::Text("%d", it.innovationSignals);
             ImGui::TableSetColumnIndex(9); ImGui::Text("%d", it.activitySignals);
             ImGui::TableSetColumnIndex(10); ImGui::Text("%d", it.plannedResultsSignals);
-            ImGui::TableSetColumnIndex(11); ImGui::TextUnformatted(domain::toString(it.inferredStatus).c_str());
+            ImGui::TableSetColumnIndex(11); ImGui::Text("%d/%d", it.interpretedDocsIncluded, it.interpretedDocsTotal);
+            ImGui::TableSetColumnIndex(12); ImGui::TextUnformatted(domain::toString(it.inferredStatus).c_str());
         }
 
         ImGui::EndTable();
@@ -396,6 +413,8 @@ void renderInventoryTab(const std::vector<domain::InventoryEntry>& inventory) {
         ImGui::Spacing();
         ImGui::TextColored(ImVec4(0.55f, 0.75f, 1.f, 1.f), "%s", selected->repoName.c_str());
         ImGui::TextDisabled("%s", selected->repoPath.c_str());
+        ImGui::Separator();
+        renderCurationSummary(*selected);
         ImGui::Separator();
         renderField("Resumo", selected->summary);
         ImGui::Separator();

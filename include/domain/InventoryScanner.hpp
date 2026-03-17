@@ -31,6 +31,12 @@ struct InventoryEntry {
     std::string expectedResults;
     std::vector<std::string> teamMembers;
     std::vector<InterpretedDocument> interpretedDocuments;
+    int interpretedDocsTotal{0};
+    int interpretedDocsIncluded{0};
+    int curatedNucleoProjeto{0};
+    int curatedEvidenciaExecucao{0};
+    int curatedSuporteAdmin{0};
+    int curatedComplementar{0};
     int innovationSignals{0};
     int activitySignals{0};
     int plannedResultsSignals{0};
