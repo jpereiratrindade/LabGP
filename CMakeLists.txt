@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(LABGP_WARNINGS_AS_ERRORS "Treat warnings as errors" OFF)
+option(LABGP_ENABLE_GUI "Build SDL2/OpenGL/ImGui dashboard" ON)
 
 add_library(labgp_domain
     src/domain/ResearchProjectStore.cpp
@@ -26,6 +27,29 @@ else()
     endif()
 endif()
 
+set(LABGP_HAS_GUI_UI 0)
+if(LABGP_ENABLE_GUI)
+    find_package(SDL2 QUIET)
+    find_package(OpenGL QUIET)
+    set(LABGP_IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../LabGestao/vendor/imgui)
+    if(SDL2_FOUND AND OpenGL_FOUND AND EXISTS ${LABGP_IMGUI_DIR}/imgui.cpp)
+        set(LABGP_HAS_GUI_UI 1)
+        add_library(imgui STATIC
+            ${LABGP_IMGUI_DIR}/imgui.cpp
+            ${LABGP_IMGUI_DIR}/imgui_draw.cpp
+            ${LABGP_IMGUI_DIR}/imgui_tables.cpp
+            ${LABGP_IMGUI_DIR}/imgui_widgets.cpp
+            ${LABGP_IMGUI_DIR}/backends/imgui_impl_sdl2.cpp
+            ${LABGP_IMGUI_DIR}/backends/imgui_impl_opengl3.cpp
+        )
+        target_include_directories(imgui PUBLIC
+            ${LABGP_IMGUI_DIR}
+            ${LABGP_IMGUI_DIR}/backends
+        )
+        target_link_libraries(imgui PUBLIC SDL2::SDL2 OpenGL::GL)
+    endif()
+endif()
+
 add_executable(LabGP
     src/main.cpp
     src/app/AppRuntime.cpp
@@ -36,6 +60,11 @@ add_executable(LabGP
 
 target_link_libraries(LabGP PRIVATE labgp_domain)
 target_include_directories(LabGP PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_definitions(LabGP PRIVATE LABGP_HAS_GUI_UI=${LABGP_HAS_GUI_UI})
+if(LABGP_HAS_GUI_UI)
+    target_sources(LabGP PRIVATE src/ui/GuiDashboard.cpp)
+    target_link_libraries(LabGP PRIVATE imgui SDL2::SDL2 OpenGL::GL)
+endif()
 
 add_executable(LabGPDomainTests
     tests/domain/DomainTests.cpp

@@ -18,6 +18,12 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+## Execucao
+
+- `./build/LabGP` abre GUI (quando SDL2/OpenGL/ImGui estiverem disponiveis), com fallback para console.
+- `./build/LabGP --console` força modo texto.
+- `./build/LabGP --gui` força tentativa de GUI.
+
 ## Estrutura
 
 - `include/` contratos
