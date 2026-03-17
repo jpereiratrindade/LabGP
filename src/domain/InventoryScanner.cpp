@@ -1,12 +1,16 @@
 #include "domain/InventoryScanner.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
+#include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <initializer_list>
 #include <sstream>
 #include <string>
+#include <unordered_set>
 
 #include "domain/ResearchProject.hpp"
 
@@ -32,31 +36,252 @@ std::string toLowerAscii(std::string value) {
     return value;
 }
 
+std::string shellEscapeSingleQuoted(const std::string& s) {
+    std::string out;
+    out.reserve(s.size() + 8);
+    out.push_back('\'');
+    for (char c : s) {
+        if (c == '\'') out += "'\\''";
+        else out.push_back(c);
+    }
+    out.push_back('\'');
+    return out;
+}
+
+void replaceAll(std::string* value, const std::string& from, const std::string& to) {
+    if (!value || from.empty()) return;
+    std::size_t pos = 0;
+    while ((pos = value->find(from, pos)) != std::string::npos) {
+        value->replace(pos, from.size(), to);
+        pos += to.size();
+    }
+}
+
+std::string normalizeSearchText(std::string value) {
+    replaceAll(&value, "\xC3\xA1", "a"); // á
+    replaceAll(&value, "\xC3\xA0", "a"); // à
+    replaceAll(&value, "\xC3\xA3", "a"); // ã
+    replaceAll(&value, "\xC3\xA2", "a"); // â
+    replaceAll(&value, "\xC3\xA4", "a"); // ä
+    replaceAll(&value, "\xC3\x81", "a"); // Á
+    replaceAll(&value, "\xC3\x80", "a"); // À
+    replaceAll(&value, "\xC3\x83", "a"); // Ã
+    replaceAll(&value, "\xC3\x82", "a"); // Â
+    replaceAll(&value, "\xC3\x84", "a"); // Ä
+    replaceAll(&value, "\xC3\xA9", "e"); // é
+    replaceAll(&value, "\xC3\xAA", "e"); // ê
+    replaceAll(&value, "\xC3\xA8", "e"); // è
+    replaceAll(&value, "\xC3\xAB", "e"); // ë
+    replaceAll(&value, "\xC3\x89", "e"); // É
+    replaceAll(&value, "\xC3\x8A", "e"); // Ê
+    replaceAll(&value, "\xC3\x88", "e"); // È
+    replaceAll(&value, "\xC3\x8B", "e"); // Ë
+    replaceAll(&value, "\xC3\xAD", "i"); // í
+    replaceAll(&value, "\xC3\xAE", "i"); // î
+    replaceAll(&value, "\xC3\xAC", "i"); // ì
+    replaceAll(&value, "\xC3\xAF", "i"); // ï
+    replaceAll(&value, "\xC3\x8D", "i"); // Í
+    replaceAll(&value, "\xC3\x8E", "i"); // Î
+    replaceAll(&value, "\xC3\x8C", "i"); // Ì
+    replaceAll(&value, "\xC3\x8F", "i"); // Ï
+    replaceAll(&value, "\xC3\xB3", "o"); // ó
+    replaceAll(&value, "\xC3\xB4", "o"); // ô
+    replaceAll(&value, "\xC3\xB5", "o"); // õ
+    replaceAll(&value, "\xC3\xB2", "o"); // ò
+    replaceAll(&value, "\xC3\xB6", "o"); // ö
+    replaceAll(&value, "\xC3\x93", "o"); // Ó
+    replaceAll(&value, "\xC3\x94", "o"); // Ô
+    replaceAll(&value, "\xC3\x95", "o"); // Õ
+    replaceAll(&value, "\xC3\x92", "o"); // Ò
+    replaceAll(&value, "\xC3\x96", "o"); // Ö
+    replaceAll(&value, "\xC3\xBA", "u"); // ú
+    replaceAll(&value, "\xC3\xBB", "u"); // û
+    replaceAll(&value, "\xC3\xB9", "u"); // ù
+    replaceAll(&value, "\xC3\xBC", "u"); // ü
+    replaceAll(&value, "\xC3\x9A", "u"); // Ú
+    replaceAll(&value, "\xC3\x9B", "u"); // Û
+    replaceAll(&value, "\xC3\x99", "u"); // Ù
+    replaceAll(&value, "\xC3\x9C", "u"); // Ü
+    replaceAll(&value, "\xC3\xA7", "c"); // ç
+    replaceAll(&value, "\xC3\x87", "c"); // Ç
+    return toLowerAscii(std::move(value));
+}
+
+bool commandExists(const char* command) {
+    std::string cmd = "command -v ";
+    cmd += command;
+    cmd += " >/dev/null 2>&1";
+    return std::system(cmd.c_str()) == 0;
+}
+
+bool runCommandCollectText(const std::string& command, std::string* out) {
+    if (!out) return false;
+    out->clear();
+    std::array<char, 1024> buffer{};
+    FILE* pipe = popen(command.c_str(), "r");
+    if (!pipe) return false;
+    while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) {
+        out->append(buffer.data());
+    }
+    const int rc = pclose(pipe);
+    return rc == 0;
+}
+
+std::string trimCopy(std::string value) {
+    auto notSpace = [](unsigned char c) { return !std::isspace(c); };
+    value.erase(value.begin(), std::find_if(value.begin(), value.end(), notSpace));
+    value.erase(std::find_if(value.rbegin(), value.rend(), notSpace).base(), value.end());
+    return value;
+}
+
+std::vector<std::string> splitLines(const std::string& text) {
+    std::vector<std::string> lines;
+    std::istringstream in(text);
+    std::string line;
+    while (std::getline(in, line)) {
+        lines.push_back(line);
+    }
+    return lines;
+}
+
+std::string joinAndClamp(const std::vector<std::string>& lines, std::size_t maxChars = 650) {
+    std::string out;
+    for (const auto& raw : lines) {
+        std::string line = trimCopy(raw);
+        if (line.empty()) continue;
+        if (!out.empty()) out += " ";
+        out += line;
+        if (out.size() >= maxChars) break;
+    }
+    if (out.size() > maxChars) {
+        out.resize(maxChars);
+        out += "...";
+    }
+    return out;
+}
+
 std::vector<std::string> listDocFileNames(const fs::path& root) {
     std::vector<std::string> names;
     std::error_code ec;
     for (const auto& entry : fs::directory_iterator(root, fs::directory_options::skip_permission_denied, ec)) {
         if (!entry.is_regular_file(ec)) continue;
         const std::string ext = toLowerAscii(entry.path().extension().string());
-        if (ext == ".md" || ext == ".pdf" || ext == ".docx" || ext == ".xlsx" || ext == ".csv") {
+        if (ext == ".pdf") {
             names.push_back(toLowerAscii(entry.path().filename().string()));
         }
     }
     return names;
 }
 
-std::string loadDossierTextCorpus(const fs::path& root) {
+std::string extractPdfText(const fs::path& pdfPath) {
+    if (!commandExists("pdftotext")) return {};
+    std::string text;
+    const std::string cmd =
+        "pdftotext -layout -enc UTF-8 " + shellEscapeSingleQuoted(pdfPath.string()) + " - 2>/dev/null";
+    if (!runCommandCollectText(cmd, &text)) return {};
+    return text;
+}
+
+std::string sha256OfFile(const fs::path& filePath) {
+    if (commandExists("sha256sum")) {
+        std::string out;
+        const std::string cmd = "sha256sum " + shellEscapeSingleQuoted(filePath.string()) + " 2>/dev/null";
+        if (runCommandCollectText(cmd, &out)) {
+            std::istringstream in(out);
+            std::string hash;
+            in >> hash;
+            if (!hash.empty()) return hash;
+        }
+    }
+    if (commandExists("shasum")) {
+        std::string out;
+        const std::string cmd = "shasum -a 256 " + shellEscapeSingleQuoted(filePath.string()) + " 2>/dev/null";
+        if (runCommandCollectText(cmd, &out)) {
+            std::istringstream in(out);
+            std::string hash;
+            in >> hash;
+            if (!hash.empty()) return hash;
+        }
+    }
+    return {};
+}
+
+struct PdfTextResult {
+    std::string text;
+    InterpretedDocument doc;
+};
+
+PdfTextResult readCachedPdfTextOrExtract(const fs::path& root, const fs::path& pdfPath) {
+    PdfTextResult result;
+    result.doc.fileName = pdfPath.filename().string();
+    result.doc.filePath = pdfPath.string();
+    const std::string hash = sha256OfFile(pdfPath);
+    result.doc.sha256 = hash;
+    if (hash.empty()) {
+        result.text = extractPdfText(pdfPath);
+        result.doc.usedCache = false;
+        result.doc.cachePath = "";
+        result.doc.textBytes = static_cast<int>(result.text.size());
+        return result;
+    }
+
+    const fs::path cacheDir = root / ".labgp_cache" / "pdf_text";
+    std::error_code ec;
+    fs::create_directories(cacheDir, ec);
+    const fs::path cachedTextPath = cacheDir / (hash + ".txt");
+    result.doc.cachePath = cachedTextPath.string();
+    if (fs::exists(cachedTextPath, ec) && fs::is_regular_file(cachedTextPath, ec)) {
+        std::ifstream in(cachedTextPath);
+        if (in.is_open()) {
+            std::ostringstream ss;
+            ss << in.rdbuf();
+            result.text = ss.str();
+            result.doc.usedCache = true;
+            result.doc.textBytes = static_cast<int>(result.text.size());
+            return result;
+        }
+    }
+
+    result.text = extractPdfText(pdfPath);
+    if (!result.text.empty()) {
+        std::ofstream out(cachedTextPath);
+        if (out.is_open()) out << result.text;
+    }
+    result.doc.usedCache = false;
+    result.doc.textBytes = static_cast<int>(result.text.size());
+    return result;
+}
+
+std::string loadDossierTextCorpusRaw(const fs::path& root, std::vector<InterpretedDocument>* interpretedDocs) {
+    if (interpretedDocs) interpretedDocs->clear();
     std::ostringstream corpus;
+    const fs::path cacheDir = root / ".labgp_cache" / "pdf_text";
     std::error_code ec;
     for (const auto& entry : fs::directory_iterator(root, fs::directory_options::skip_permission_denied, ec)) {
         if (!entry.is_regular_file(ec)) continue;
         const std::string ext = toLowerAscii(entry.path().extension().string());
-        if (ext != ".md" && ext != ".txt") continue;
-        std::ifstream in(entry.path());
-        if (!in.is_open()) continue;
-        corpus << in.rdbuf() << "\n";
+        if (ext != ".pdf") continue;
+        PdfTextResult textResult = readCachedPdfTextOrExtract(root, entry.path());
+        if (interpretedDocs) interpretedDocs->push_back(textResult.doc);
+        if (textResult.text.empty()) continue;
+        corpus << textResult.text << "\n";
     }
-    return toLowerAscii(corpus.str());
+    if (interpretedDocs) {
+        fs::create_directories(cacheDir, ec);
+        const fs::path manifestPath = cacheDir / "manifest.tsv";
+        std::ofstream mf(manifestPath);
+        if (mf.is_open()) {
+            mf << "file_name\tsha256\tcache_path\tused_cache\ttext_bytes\n";
+            for (const auto& d : *interpretedDocs) {
+                mf << d.fileName << '\t'
+                   << d.sha256 << '\t'
+                   << d.cachePath << '\t'
+                   << (d.usedCache ? "1" : "0") << '\t'
+                   << d.textBytes << '\n';
+            }
+        }
+    }
+    return corpus.str();
 }
 
 bool hasDossierSignals(const fs::path& root) {
@@ -72,6 +297,86 @@ bool containsToken(const std::vector<std::string>& names, const std::string& tok
 
 bool containsToken(const std::string& text, const std::string& token) {
     return text.find(token) != std::string::npos;
+}
+
+bool lineHasKeyword(const std::string& lowerLine, const std::vector<std::string>& keywords) {
+    for (const auto& k : keywords) {
+        if (lowerLine.find(normalizeSearchText(k)) != std::string::npos) return true;
+    }
+    return false;
+}
+
+std::string extractSectionByKeywords(const std::string& rawText, const std::vector<std::string>& keywords) {
+    const auto lines = splitLines(rawText);
+    const int n = static_cast<int>(lines.size());
+    for (int i = 0; i < n; ++i) {
+        const std::string line = trimCopy(lines[i]);
+        if (line.empty()) continue;
+        const std::string lower = normalizeSearchText(line);
+        const bool isHeading = (!line.empty() && line[0] == '#') && lineHasKeyword(lower, keywords);
+        const bool isLabeled = (lower.find(':') != std::string::npos) && lineHasKeyword(lower, keywords);
+        if (!isHeading && !isLabeled) continue;
+
+        std::vector<std::string> out;
+        if (isLabeled) {
+            const std::size_t pos = line.find(':');
+            if (pos != std::string::npos && pos + 1 < line.size()) {
+                const std::string tail = trimCopy(line.substr(pos + 1));
+                if (!tail.empty()) out.push_back(tail);
+            }
+        }
+        for (int j = i + 1; j < n; ++j) {
+            std::string next = trimCopy(lines[j]);
+            if (next.empty()) {
+                if (!out.empty()) break;
+                continue;
+            }
+            if (!next.empty() && next[0] == '#') break;
+            if (next.size() > 2 && next[0] == '-' && next[1] == ' ') next = trimCopy(next.substr(2));
+            out.push_back(next);
+            if (out.size() >= 8) break;
+        }
+        const std::string merged = joinAndClamp(out);
+        if (!merged.empty()) return merged;
+    }
+    return {};
+}
+
+std::vector<std::string> extractTeamMembers(const std::string& rawText) {
+    const auto lines = splitLines(rawText);
+    const int n = static_cast<int>(lines.size());
+    const std::vector<std::string> keys = {
+        "equipe", "equipe executora", "pesquisadores", "coordenador", "colaboradores", "time"
+    };
+    std::vector<std::string> members;
+    std::unordered_set<std::string> seen;
+
+    for (int i = 0; i < n; ++i) {
+        const std::string line = trimCopy(lines[i]);
+        if (line.empty()) continue;
+        const std::string lower = normalizeSearchText(line);
+        bool startsSection = ((!line.empty() && line[0] == '#') || lower.find(':') != std::string::npos) &&
+                             lineHasKeyword(lower, keys);
+        if (!startsSection) continue;
+
+        for (int j = i + 1; j < n; ++j) {
+            std::string next = trimCopy(lines[j]);
+            if (next.empty()) {
+                if (!members.empty()) break;
+                continue;
+            }
+            if (!next.empty() && next[0] == '#') break;
+            if (next.size() > 2 && next[0] == '-' && next[1] == ' ') next = trimCopy(next.substr(2));
+            if (next.empty()) continue;
+            const std::string normalized = normalizeSearchText(next);
+            if (seen.insert(normalized).second) {
+                members.push_back(next);
+            }
+            if (members.size() >= 12) break;
+        }
+        if (!members.empty()) break;
+    }
+    return members;
 }
 
 int countGroups(const std::vector<std::vector<std::string>>& groups, const std::vector<std::string>& names, const std::string& corpus) {
@@ -98,12 +403,16 @@ ResearchStatus inferStatusFromSignals(const std::vector<std::string>& names, con
         return false;
     };
 
-    if (hasAny({"encerrado", "concluido", "finalizado", "prestacao_final"})) return ResearchStatus::Closed;
-    if (hasAny({"publicacao", "artigo", "paper", "patente"})) return ResearchStatus::Publication;
-    if (hasAny({"analise", "avaliacao_tecnica", "parecer"})) return ResearchStatus::Analysis;
-    if (hasAny({"execucao", "andamento", "em_execucao", "workplan"})) return ResearchStatus::Execution;
-    if (hasAny({"aprovado", "homologado", "deferido"})) return ResearchStatus::Approved;
+    if (hasAny({"termo_de_encerramento", "projeto_encerrado", "prestacao_final_aprovada", "status: encerrado"})) {
+        return ResearchStatus::Closed;
+    }
+    if (hasAny({"aprovado", "homologado", "deferido", "projeto_aprovado"})) return ResearchStatus::Approved;
     if (hasAny({"submetido", "submissao", "proposta_enviada", "em_avaliacao", "edital"})) return ResearchStatus::InReview;
+    if (hasAny({"execucao", "andamento", "em_execucao", "workplan"})) return ResearchStatus::Execution;
+    if (hasAny({"analise", "avaliacao_tecnica", "parecer", "em_analise"})) return ResearchStatus::Analysis;
+    if (hasAny({"artigo_publicado", "publicacao_aceita", "paper_aceito", "patente_concedida"})) {
+        return ResearchStatus::Publication;
+    }
     return ResearchStatus::Proposal;
 }
 
@@ -182,6 +491,16 @@ std::vector<InventoryEntry> InventoryScanner::scan(const std::string& workspaceR
         const bool isDossier = hasDossierSignals(repoPath);
         if (!isGitRepo && !isDossier) continue;
 
+        std::vector<std::string> dossierNames;
+        std::string dossierRawCorpus;
+        std::string dossierSearchCorpus;
+        std::vector<InterpretedDocument> dossierInterpretedDocs;
+        if (isDossier) {
+            dossierNames = listDocFileNames(repoPath);
+            dossierRawCorpus = loadDossierTextCorpusRaw(repoPath, &dossierInterpretedDocs);
+            dossierSearchCorpus = normalizeSearchText(dossierRawCorpus);
+        }
+
         ResearchProject probe;
         probe.id = repoPath.filename().string();
         probe.title = probe.id;
@@ -210,17 +529,21 @@ std::vector<InventoryEntry> InventoryScanner::scan(const std::string& workspaceR
             probe.hasCycleGuard = hasCycleGuardConfig(repoPath);
             probe.hasFormatLint = fs::exists(repoPath / ".clang-format");
         } else {
-            const auto names = listDocFileNames(repoPath);
+            const auto& names = dossierNames;
+            const std::string& corpus = dossierSearchCorpus;
+            auto hasToken = [&](const std::string& token) {
+                return containsToken(names, token) || containsToken(corpus, token);
+            };
             probe.softwareIntensive = false;
-            probe.hasReadme = containsToken(names, "readme") || containsToken(names, "projeto") || containsToken(names, "proposta");
-            probe.hasMethodology = containsToken(names, "metod") || containsToken(names, "projeto") || containsToken(names, "proposta");
-            probe.hasWorkPlan = containsToken(names, "plano") || containsToken(names, "proposta") || containsToken(names, "projeto");
-            probe.hasTimeline = containsToken(names, "cronograma") || containsToken(names, "edital");
-            probe.hasBudgetPlan = containsToken(names, "orc") || containsToken(names, "budget");
-            probe.hasValidationPlan = containsToken(names, "avali") || containsToken(names, "valid");
-            probe.hasDataGovernance = containsToken(names, "dados") || containsToken(names, "govern");
-            probe.hasTerritorialNetwork = containsToken(names, "territorial") || containsToken(names, "sait");
-            probe.hasPublicPolicyAlignment = containsToken(names, "politica") || containsToken(names, "publica");
+            probe.hasReadme = hasToken("readme") || hasToken("projeto") || hasToken("proposta");
+            probe.hasMethodology = hasToken("metod") || hasToken("projeto") || hasToken("proposta");
+            probe.hasWorkPlan = hasToken("plano") || hasToken("proposta") || hasToken("projeto");
+            probe.hasTimeline = hasToken("cronograma") || hasToken("edital");
+            probe.hasBudgetPlan = hasToken("orc") || hasToken("budget");
+            probe.hasValidationPlan = hasToken("avali") || hasToken("valid");
+            probe.hasDataGovernance = hasToken("dados") || hasToken("govern");
+            probe.hasTerritorialNetwork = hasToken("territorial") || hasToken("sait");
+            probe.hasPublicPolicyAlignment = hasToken("politica") || hasToken("publica");
             probe.plannedDeliverables = 4;
             probe.deliveredDeliverables = 1;
             probe.reviewMeetings = 1;
@@ -231,9 +554,18 @@ std::vector<InventoryEntry> InventoryScanner::scan(const std::string& workspaceR
         inv.repoPath = repoPath.string();
         inv.source = isGitRepo ? "Git" : "Dossie";
         if (isDossier) {
-            const auto names = listDocFileNames(repoPath);
-            const std::string corpus = loadDossierTextCorpus(repoPath);
+            const auto& names = dossierNames;
+            const std::string& rawCorpus = dossierRawCorpus;
+            const std::string& corpus = dossierSearchCorpus;
+            inv.interpretedDocuments = std::move(dossierInterpretedDocs);
             inv.inferredStatus = inferStatusFromSignals(names, corpus);
+
+            inv.summary = extractSectionByKeywords(rawCorpus, {"resumo", "summary"});
+            inv.objectives = extractSectionByKeywords(rawCorpus, {"objetivos", "objetivo geral", "objetivo"});
+            inv.innovationContributions = extractSectionByKeywords(rawCorpus, {"inovacao", "contribuicoes para inovacao", "contribuicao"});
+            inv.researchActivities = extractSectionByKeywords(rawCorpus, {"atividades de pesquisa", "atividades", "metodologia", "plano de trabalho"});
+            inv.expectedResults = extractSectionByKeywords(rawCorpus, {"resultados esperados", "resultados", "entregaveis", "outcomes"});
+            inv.teamMembers = extractTeamMembers(rawCorpus);
 
             const std::vector<std::vector<std::string>> innovationGroups = {
                 {"inov", "sociotecnica", "tecnolog"},

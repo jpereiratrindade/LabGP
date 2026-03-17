@@ -78,11 +78,40 @@ void renderPerspectiveSelector(ScorePerspective* perspective) {
     *perspective = static_cast<ScorePerspective>(current);
 }
 
-void renderProjectsTab(const std::vector<domain::ResearchProject>& projects, ScorePerspective perspective) {
+void renderInterpretedDocuments(const std::vector<domain::InterpretedDocument>& docs) {
+    ImGui::TextDisabled("Documentos PDF interpretados");
+    if (docs.empty()) {
+        ImGui::TextUnformatted("-");
+        return;
+    }
+    for (const auto& d : docs) {
+        const std::string shortHash = d.sha256.empty() ? "-" : d.sha256.substr(0, std::min<std::size_t>(12, d.sha256.size()));
+        ImGui::BulletText("%s", d.fileName.c_str());
+        ImGui::SameLine();
+        ImGui::TextDisabled("[%s] %d bytes %s", shortHash.c_str(), d.textBytes, d.usedCache ? "(cache)" : "(extraido)");
+    }
+}
+
+void renderProjectsTab(
+    const std::vector<domain::ResearchProject>& projects,
+    const std::vector<domain::InventoryEntry>& inventory,
+    ScorePerspective perspective
+) {
+    static std::string selectedProjectId;
+    static float projectDetailWidth = 430.f;
+    const float splitterWidth = 6.f;
+
     ImGui::TextColored(ImVec4(0.85f, 0.90f, 1.0f, 1.0f), "Fluxo do Projeto: coluna 'Fluxo (Status)'");
     ImGui::TextDisabled("Score de Qualidade: %s/Inst/Pesq/Total", perspectiveShortLabel(perspective));
     ImGui::Spacing();
 
+    const bool hasDetail = !selectedProjectId.empty();
+    const float detailWidth = hasDetail ? projectDetailWidth : 0.f;
+    const float availableHeight = ImGui::GetContentRegionAvail().y;
+    float tableWidth = ImGui::GetContentRegionAvail().x - detailWidth - (hasDetail ? (splitterWidth + 4.f) : 0.f);
+    if (tableWidth < 300.f) tableWidth = ImGui::GetContentRegionAvail().x;
+
+    ImGui::BeginChild("##projects_table_region", ImVec2(tableWidth, availableHeight), false);
     if (ImGui::BeginTable("projects_table", 12, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
         ImGui::TableSetupColumn("ID");
         ImGui::TableSetupColumn("Titulo");
@@ -115,7 +144,13 @@ void renderProjectsTab(const std::vector<domain::ResearchProject>& projects, Sco
         for (const auto* p : rows) {
             const auto score = domain::computeScore(*p);
             ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted(p->id.c_str());
+            ImGui::TableSetColumnIndex(0);
+            bool selected = (selectedProjectId == p->id);
+            if (ImGui::Selectable(("##proj_row_" + p->id).c_str(), selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap)) {
+                selectedProjectId = selected ? "" : p->id;
+            }
+            ImGui::SameLine();
+            ImGui::TextUnformatted(p->id.c_str());
             ImGui::TableSetColumnIndex(1); ImGui::TextUnformatted(p->title.c_str());
             ImGui::TableSetColumnIndex(2); ImGui::TextUnformatted(domain::toString(p->status).c_str());
             ImGui::TableSetColumnIndex(3); ImGui::TextUnformatted(p->softwareIntensive ? "Software" : "Pesquisa");
@@ -135,6 +170,82 @@ void renderProjectsTab(const std::vector<domain::ResearchProject>& projects, Sco
         }
 
         ImGui::EndTable();
+    }
+    ImGui::EndChild();
+
+    if (!selectedProjectId.empty()) {
+        const domain::ResearchProject* selected = nullptr;
+        for (const auto& p : projects) {
+            if (p.id == selectedProjectId) {
+                selected = &p;
+                break;
+            }
+        }
+        if (!selected) {
+            selectedProjectId.clear();
+            return;
+        }
+        const auto score = domain::computeScore(*selected);
+        auto findInventoryForProject = [&](const domain::ResearchProject& p) -> const domain::InventoryEntry* {
+            const std::string prefix = "Integracao: ";
+            if (p.title.rfind(prefix, 0) != 0) return nullptr;
+            const std::string repoName = p.title.substr(prefix.size());
+            for (const auto& it : inventory) {
+                if (it.repoName == repoName) return &it;
+            }
+            return nullptr;
+        };
+        const domain::InventoryEntry* inv = findInventoryForProject(*selected);
+
+        auto renderField = [](const char* label, const std::string& value) {
+            ImGui::TextDisabled("%s", label);
+            if (value.empty()) ImGui::TextUnformatted("-");
+            else ImGui::TextWrapped("%s", value.c_str());
+        };
+
+        ImGui::SameLine(0.f, 2.f);
+        ImGui::InvisibleButton("##projects_splitter", ImVec2(splitterWidth, availableHeight));
+        if (ImGui::IsItemActive()) {
+            projectDetailWidth -= ImGui::GetIO().MouseDelta.x;
+            projectDetailWidth = std::clamp(projectDetailWidth, 300.0f, 760.0f);
+        }
+        ImGui::SameLine(0.f, 2.f);
+        ImGui::BeginChild("##projects_detail_region", ImVec2(projectDetailWidth, availableHeight), true);
+        if (ImGui::SmallButton("X")) selectedProjectId.clear();
+        ImGui::Spacing();
+        ImGui::TextColored(ImVec4(0.55f, 0.75f, 1.f, 1.f), "%s", selected->id.c_str());
+        ImGui::TextWrapped("%s", selected->title.c_str());
+        ImGui::Separator();
+        ImGui::Text("Fluxo: %s", domain::toString(selected->status).c_str());
+        ImGui::Text("Tipo: %s", selected->softwareIntensive ? "Software" : "Pesquisa");
+        ImGui::Text("Qualidade (%s): %d", perspectiveShortLabel(perspective), scoreByPerspective(score, perspective));
+        ImGui::Text("Total: %d | Inst: %d | Pesq: %d", score.total, score.institutional, score.researcher);
+        ImGui::Text("Oper: %d | Matur: %d | Exec: %d | Conf: %s",
+            score.operational, score.maturity, score.execution,
+            score.reliabilityApplicable ? std::to_string(score.reliability).c_str() : "N/A");
+        ImGui::Separator();
+        renderField("Programa", selected->program);
+        renderField("Eixo tematico", selected->thematicAxis);
+        renderField("Linha", selected->line);
+        renderField("Coordenacao", selected->coordinator);
+        renderField("Instituicao", selected->institution);
+        if (inv) {
+            ImGui::Separator();
+            renderField("Resumo", inv->summary);
+            renderField("Objetivos", inv->objectives);
+            renderField("Contribuicoes para Inovacao", inv->innovationContributions);
+            renderField("Atividades de Pesquisa", inv->researchActivities);
+            renderField("Resultados Esperados", inv->expectedResults);
+            ImGui::TextDisabled("Equipe");
+            if (inv->teamMembers.empty()) {
+                ImGui::TextUnformatted("-");
+            } else {
+                for (const auto& m : inv->teamMembers) ImGui::BulletText("%s", m.c_str());
+            }
+            ImGui::Separator();
+            renderInterpretedDocuments(inv->interpretedDocuments);
+        }
+        ImGui::EndChild();
     }
 }
 
@@ -190,11 +301,22 @@ void renderKanbanTab(const std::vector<domain::ResearchProject>& projects, Score
 }
 
 void renderInventoryTab(const std::vector<domain::InventoryEntry>& inventory) {
+    static std::string selectedRepoPath;
+    static float inventoryDetailWidth = 420.f;
+    const float splitterWidth = 6.f;
+
     ImGui::Text("Repositorios detectados: %d", static_cast<int>(inventory.size()));
     ImGui::TextColored(ImVec4(0.85f, 0.90f, 1.0f, 1.0f), "Fluxo do Projeto: coluna 'Fluxo (Status inferido)'.");
     ImGui::TextDisabled("Score de Qualidade: Total/Inst/Pesq/Oper/Matur/Conf.");
     ImGui::Spacing();
 
+    const bool hasDetail = !selectedRepoPath.empty();
+    const float detailWidth = hasDetail ? inventoryDetailWidth : 0.f;
+    const float availableHeight = ImGui::GetContentRegionAvail().y;
+    float tableWidth = ImGui::GetContentRegionAvail().x - detailWidth - (hasDetail ? (splitterWidth + 4.f) : 0.f);
+    if (tableWidth < 300.f) tableWidth = ImGui::GetContentRegionAvail().x;
+
+    ImGui::BeginChild("##inventory_table_region", ImVec2(tableWidth, availableHeight), false);
     if (ImGui::BeginTable("inventory_table", 12, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
         ImGui::TableSetupColumn("Repo");
         ImGui::TableSetupColumn("Origem");
@@ -212,7 +334,13 @@ void renderInventoryTab(const std::vector<domain::InventoryEntry>& inventory) {
 
         for (const auto& it : inventory) {
             ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted(it.repoName.c_str());
+            ImGui::TableSetColumnIndex(0);
+            bool selected = (selectedRepoPath == it.repoPath);
+            if (ImGui::Selectable(("##inv_row_" + it.repoPath).c_str(), selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap)) {
+                selectedRepoPath = selected ? "" : it.repoPath;
+            }
+            ImGui::SameLine();
+            ImGui::TextUnformatted(it.repoName.c_str());
             ImGui::TableSetColumnIndex(1); ImGui::TextUnformatted(it.source.c_str());
             ImGui::TableSetColumnIndex(2); ImGui::Text("%d", it.score.total);
             ImGui::TableSetColumnIndex(3); ImGui::Text("%d", it.score.institutional);
@@ -227,6 +355,65 @@ void renderInventoryTab(const std::vector<domain::InventoryEntry>& inventory) {
         }
 
         ImGui::EndTable();
+    }
+    ImGui::EndChild();
+
+    if (!selectedRepoPath.empty()) {
+        const domain::InventoryEntry* selected = nullptr;
+        for (const auto& it : inventory) {
+            if (it.repoPath == selectedRepoPath) {
+                selected = &it;
+                break;
+            }
+        }
+        if (!selected) {
+            selectedRepoPath.clear();
+            return;
+        }
+
+        auto renderField = [](const char* label, const std::string& value) {
+            ImGui::TextDisabled("%s", label);
+            if (value.empty()) {
+                ImGui::TextUnformatted("-");
+            } else {
+                ImGui::TextWrapped("%s", value.c_str());
+            }
+        };
+
+        ImGui::SameLine(0.f, 2.f);
+        ImGui::InvisibleButton("##inventory_splitter", ImVec2(splitterWidth, availableHeight));
+        if (ImGui::IsItemActive()) {
+            inventoryDetailWidth -= ImGui::GetIO().MouseDelta.x;
+            inventoryDetailWidth = std::clamp(inventoryDetailWidth, 300.0f, 760.0f);
+        }
+        ImGui::SameLine(0.f, 2.f);
+        ImGui::BeginChild("##inventory_detail_region", ImVec2(inventoryDetailWidth, availableHeight), true);
+        if (ImGui::SmallButton("X")) selectedRepoPath.clear();
+        ImGui::Spacing();
+        ImGui::TextColored(ImVec4(0.55f, 0.75f, 1.f, 1.f), "%s", selected->repoName.c_str());
+        ImGui::TextDisabled("%s", selected->repoPath.c_str());
+        ImGui::Separator();
+        renderField("Resumo", selected->summary);
+        ImGui::Separator();
+        renderField("Objetivos", selected->objectives);
+        ImGui::Separator();
+        renderField("Contribuicoes para Inovacao", selected->innovationContributions);
+        ImGui::Separator();
+        renderField("Atividades de Pesquisa", selected->researchActivities);
+        ImGui::Separator();
+        renderField("Resultados Esperados", selected->expectedResults);
+        ImGui::Separator();
+        ImGui::TextDisabled("Equipe");
+        if (selected->teamMembers.empty()) {
+            ImGui::TextUnformatted("-");
+        } else {
+            for (const auto& member : selected->teamMembers) {
+                ImGui::BulletText("%s", member.c_str());
+            }
+        }
+        ImGui::Separator();
+        renderInterpretedDocuments(selected->interpretedDocuments);
+        ImGui::EndChild();
     }
 }
 
@@ -739,7 +926,7 @@ void GuiDashboard::render(
 
     if (ImGui::BeginTabBar("labgp_tabs")) {
         if (ImGui::BeginTabItem("Projetos")) {
-            renderProjectsTab(projects, scorePerspective);
+            renderProjectsTab(projects, inventory, scorePerspective);
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Kanban")) {

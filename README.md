@@ -34,6 +34,7 @@ ctest --test-dir build --output-on-failure
 - `./build/LabGP --workspace=/caminho/para/repositorios` alternativa equivalente.
 - `LABGP_WORKSPACE=/caminho/para/repositorios ./build/LabGP` define workspace por variavel de ambiente.
 - `./build/LabGP --pick-workspace` tenta abrir seletor de pasta do sistema (kdialog/zenity/osascript).
+- Para dossies, o parser considera PDFs como fonte textual e usa cache por hash em `.labgp_cache/pdf_text/`.
 
 ## Modelo de avaliacao
 

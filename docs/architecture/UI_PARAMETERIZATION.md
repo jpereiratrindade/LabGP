@@ -55,13 +55,32 @@ Um projeto pode estar `Aprovado` no fluxo e ainda ter qualidade baixa.
 - `InventoryScanner::scan(workspaceRoot)`.
 - Entrada pode ser:
   - `Git`: pasta com `.git`.
-  - `Dossie`: pasta com sinais documentais (`.md`, `.pdf`, `.docx`, `.xlsx`, `.csv`).
+  - `Dossie`: pasta com PDFs (fonte principal de conteudo).
+
+### Regra de leitura de conteudo textual
+- Apenas PDFs sao usados para extrair texto de:
+  - `Resumo`, `Objetivos`, `Contribuicoes para inovacao`,
+  - `Atividades de pesquisa`, `Resultados esperados`, `Equipe`.
+- O texto extraido e armazenado em cache local:
+  - `<pasta-do-projeto>/.labgp_cache/pdf_text/<sha256>.txt`
+- Se o hash do PDF nao muda, o cache e reutilizado.
+- Registro persistente dos PDFs interpretados:
+  - `<pasta-do-projeto>/.labgp_cache/pdf_text/manifest.tsv`
+  - Campos: `file_name`, `sha256`, `cache_path`, `used_cache`, `text_bytes`
 
 ### Colunas e significado
 - `Origem`: `Git` ou `Dossie`.
 - `Fluxo (Status inferido)`: etapa inferida para item de inventario.
 - `Total/Inst/Pesq/Oper/Matur/Conf`: qualidade.
 - `Inov`, `Ativ`, `ResPrev`: sinais de inovacao, atividades e resultados previstos.
+
+### Painel de detalhes (clique na linha)
+- `Resumo`
+- `Objetivos`
+- `Contribuicoes para inovacao`
+- `Atividades de pesquisa`
+- `Resultados esperados`
+- `Equipe`
 
 ### Inferencia de fluxo no inventario (precedencia)
 1. Encerrado
