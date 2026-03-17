@@ -66,7 +66,19 @@ Um projeto pode estar `Aprovado` no fluxo e ainda ter qualidade baixa.
 - Se o hash do PDF nao muda, o cache e reutilizado.
 - Registro persistente dos PDFs interpretados:
   - `<pasta-do-projeto>/.labgp_cache/pdf_text/manifest.tsv`
-  - Campos: `file_name`, `sha256`, `cache_path`, `used_cache`, `text_bytes`
+  - Campos: `file_name`, `file_path`, `curation_tag`, `relevance_score`, `included_in_corpus`, `sha256`, `cache_path`, `used_cache`, `text_bytes`
+
+### Curadoria de documentos (PDF)
+- Cada PDF recebe uma `curation_tag`:
+  - `nucleo_projeto`: proposta/projeto/submissao/resumo principal
+  - `evidencia_execucao`: metodologia, cronograma, atividades, resultados, pareceres
+  - `suporte_admin`: edital, chamada, anexo, termo, contrato, orcamento
+  - `complementar`: demais documentos
+- `included_in_corpus` indica se o documento entrou no texto-base para inferencia.
+- Regra de inclusao (fase atual):
+  - inclui `nucleo_projeto` e `evidencia_execucao`
+  - inclui tambem por relevancia alta
+  - garante inclusao minima dos primeiros documentos quando necessario
 
 ### Colunas e significado
 - `Origem`: `Git` ou `Dossie`.

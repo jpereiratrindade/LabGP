@@ -12,3 +12,4 @@
 - `ADR-0004-trilha-eventos-imutavel.md`
 - `ADR-0005-identidade-unica-projeto.md`
 - `ADR-0006-versionamento-evidencias-hash.md`
+- `ADR-0007-curadoria-documentos-pdf.md`

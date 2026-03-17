@@ -127,6 +127,48 @@ bool runCommandCollectText(const std::string& command, std::string* out) {
     return rc == 0;
 }
 
+int pdfRelevanceScoreFromName(const std::string& fileName) {
+    const std::string n = normalizeSearchText(fileName);
+    int score = 0;
+    if (n.find("proposta") != std::string::npos) score += 70;
+    if (n.find("submetido") != std::string::npos || n.find("submissao") != std::string::npos) score += 60;
+    if (n.find("projeto") != std::string::npos) score += 30;
+    if (n.find("resumo") != std::string::npos) score += 15;
+    if (n.find("edital") != std::string::npos || n.find("chamada") != std::string::npos) score -= 35;
+    if (n.find("orcamento") != std::string::npos) score -= 25;
+    if (n.find("elaboracao") != std::string::npos || n.find("consulta") != std::string::npos) score -= 30;
+    return score;
+}
+
+std::string classifyPdfCurationTag(const std::string& fileName) {
+    const std::string n = normalizeSearchText(fileName);
+    if (n.find("proposta") != std::string::npos ||
+        n.find("projeto") != std::string::npos ||
+        n.find("submetido") != std::string::npos ||
+        n.find("submissao") != std::string::npos ||
+        n.find("resumo") != std::string::npos ||
+        n.find("dossie") != std::string::npos) {
+        return "nucleo_projeto";
+    }
+    if (n.find("metod") != std::string::npos ||
+        n.find("cronograma") != std::string::npos ||
+        n.find("atividade") != std::string::npos ||
+        n.find("resultado") != std::string::npos ||
+        n.find("relatorio") != std::string::npos ||
+        n.find("parecer") != std::string::npos) {
+        return "evidencia_execucao";
+    }
+    if (n.find("edital") != std::string::npos ||
+        n.find("chamada") != std::string::npos ||
+        n.find("anexo") != std::string::npos ||
+        n.find("orcamento") != std::string::npos ||
+        n.find("termo") != std::string::npos ||
+        n.find("contrato") != std::string::npos) {
+        return "suporte_admin";
+    }
+    return "complementar";
+}
+
 std::string trimCopy(std::string value) {
     auto notSpace = [](unsigned char c) { return !std::isspace(c); };
     value.erase(value.begin(), std::find_if(value.begin(), value.end(), notSpace));
@@ -215,6 +257,8 @@ PdfTextResult readCachedPdfTextOrExtract(const fs::path& root, const fs::path& p
     PdfTextResult result;
     result.doc.fileName = pdfPath.filename().string();
     result.doc.filePath = pdfPath.string();
+    result.doc.relevanceScore = pdfRelevanceScoreFromName(result.doc.fileName);
+    result.doc.curationTag = classifyPdfCurationTag(result.doc.fileName);
     const std::string hash = sha256OfFile(pdfPath);
     result.doc.sha256 = hash;
     if (hash.empty()) {
@@ -256,24 +300,48 @@ std::string loadDossierTextCorpusRaw(const fs::path& root, std::vector<Interpret
     if (interpretedDocs) interpretedDocs->clear();
     std::ostringstream corpus;
     const fs::path cacheDir = root / ".labgp_cache" / "pdf_text";
+
+    std::vector<fs::path> pdfFiles;
     std::error_code ec;
     for (const auto& entry : fs::directory_iterator(root, fs::directory_options::skip_permission_denied, ec)) {
         if (!entry.is_regular_file(ec)) continue;
         const std::string ext = toLowerAscii(entry.path().extension().string());
         if (ext != ".pdf") continue;
-        PdfTextResult textResult = readCachedPdfTextOrExtract(root, entry.path());
-        if (interpretedDocs) interpretedDocs->push_back(textResult.doc);
-        if (textResult.text.empty()) continue;
-        corpus << textResult.text << "\n";
+        pdfFiles.push_back(entry.path());
     }
+
+    std::sort(pdfFiles.begin(), pdfFiles.end(), [](const fs::path& a, const fs::path& b) {
+        const int sa = pdfRelevanceScoreFromName(a.filename().string());
+        const int sb = pdfRelevanceScoreFromName(b.filename().string());
+        if (sa != sb) return sa > sb;
+        return a.filename().string() < b.filename().string();
+    });
+
+    int includedCount = 0;
+    for (const auto& pdfPath : pdfFiles) {
+        PdfTextResult textResult = readCachedPdfTextOrExtract(root, pdfPath);
+        const bool preferByTag = (textResult.doc.curationTag == "nucleo_projeto") ||
+                                 (textResult.doc.curationTag == "evidencia_execucao");
+        const bool includeThis = preferByTag || (textResult.doc.relevanceScore >= 20) || (includedCount < 2);
+        textResult.doc.includedInCorpus = includeThis;
+        if (interpretedDocs) interpretedDocs->push_back(textResult.doc);
+        if (!includeThis || textResult.text.empty()) continue;
+        corpus << textResult.text << "\n";
+        ++includedCount;
+    }
+
     if (interpretedDocs) {
         fs::create_directories(cacheDir, ec);
         const fs::path manifestPath = cacheDir / "manifest.tsv";
         std::ofstream mf(manifestPath);
         if (mf.is_open()) {
-            mf << "file_name\tsha256\tcache_path\tused_cache\ttext_bytes\n";
+            mf << "file_name\tfile_path\tcuration_tag\trelevance_score\tincluded_in_corpus\tsha256\tcache_path\tused_cache\ttext_bytes\n";
             for (const auto& d : *interpretedDocs) {
                 mf << d.fileName << '\t'
+                   << d.filePath << '\t'
+                   << d.curationTag << '\t'
+                   << d.relevanceScore << '\t'
+                   << (d.includedInCorpus ? "1" : "0") << '\t'
                    << d.sha256 << '\t'
                    << d.cachePath << '\t'
                    << (d.usedCache ? "1" : "0") << '\t'

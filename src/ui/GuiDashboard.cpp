@@ -89,6 +89,10 @@ void renderInterpretedDocuments(const std::vector<domain::InterpretedDocument>& 
         ImGui::BulletText("%s", d.fileName.c_str());
         ImGui::SameLine();
         ImGui::TextDisabled("[%s] %d bytes %s", shortHash.c_str(), d.textBytes, d.usedCache ? "(cache)" : "(extraido)");
+        ImGui::Text("Curadoria: %s | Relevancia: %d | Corpus: %s",
+            d.curationTag.empty() ? "-" : d.curationTag.c_str(),
+            d.relevanceScore,
+            d.includedInCorpus ? "incluido" : "excluido");
     }
 }
 

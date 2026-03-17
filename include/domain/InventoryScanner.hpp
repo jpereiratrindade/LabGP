@@ -11,9 +11,12 @@ namespace labgp::domain {
 struct InterpretedDocument {
     std::string fileName;
     std::string filePath;
+    std::string curationTag;
     std::string sha256;
     std::string cachePath;
     bool usedCache{false};
+    bool includedInCorpus{false};
+    int relevanceScore{0};
     int textBytes{0};
 };
 

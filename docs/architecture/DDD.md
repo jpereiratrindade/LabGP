@@ -9,6 +9,7 @@
 ## Agregados e Entidades
 - Agregado raiz: `ResearchProject` (estado de fluxo e dados de execucao).
 - Entidade de apoio: `InventoryEntry` (sinais detectados por fonte).
+- Entidade de apoio: `InterpretedDocument` (rastreabilidade da ingestao PDF).
 - Value Object: `ScoreBreakdown` (dimensoes de qualidade).
 
 ## Regras de Dominio
@@ -23,7 +24,17 @@
   - `source` (`Git` ou `Dossie`)
   - `innovationSignals`, `activitySignals`, `plannedResultsSignals`
   - `inferredStatus`
+  - campos textuais extraidos: `summary`, `objectives`, `innovationContributions`,
+    `researchActivities`, `expectedResults`, `teamMembers`
+- `InterpretedDocument` contem:
+  - identidade e trilha: `fileName`, `filePath`, `sha256`, `cachePath`
+  - curadoria: `curationTag`, `relevanceScore`, `includedInCorpus`
+  - execucao tecnica: `usedCache`, `textBytes`
+- Regra: somente PDFs alimentam o corpus textual do dossie.
+- Regra: o corpus inclui documentos por curadoria/relevancia com fallback minimo.
+- Regra: o registro persistente da ingestao fica em `.labgp_cache/pdf_text/manifest.tsv`.
 
 ## Referencias
 - `CONTEXT_MAP.md`
 - `DOMAIN_RULES.md`
+- `../adr/ADR-0007-curadoria-documentos-pdf.md`
