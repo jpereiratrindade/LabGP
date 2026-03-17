@@ -30,6 +30,7 @@ constexpr const char* kDefaultWorkspaceRoot = "/run/media/jpereiratrindade/labec
 
 struct AppData {
     std::string workspaceRoot;
+    bool includeDemoProjects{false};
     domain::ResearchProjectStore store;
     std::vector<domain::InventoryEntry> inventory;
 };
@@ -144,11 +145,12 @@ std::string resolveWorkspaceRoot(int argc, char** argv) {
     return kDefaultWorkspaceRoot;
 }
 
-AppData buildAppData(const std::string& workspaceRoot) {
+AppData buildAppData(const std::string& workspaceRoot, bool includeDemoProjects) {
     using namespace labgp::domain;
 
-    AppData data{.workspaceRoot = workspaceRoot};
-    data.store.add(ResearchProject{
+    AppData data{.workspaceRoot = workspaceRoot, .includeDemoProjects = includeDemoProjects};
+    if (includeDemoProjects) {
+        data.store.add(ResearchProject{
         .id = "LGP-001",
         .title = "Mapa de Integracao dos Projetos LabEco",
         .coordinator = "Equipe LabEco",
@@ -188,8 +190,8 @@ AppData buildAppData(const std::string& workspaceRoot) {
         .hasComplexityGuard = false,
         .hasCycleGuard = false,
         .hasFormatLint = true,
-    });
-    data.store.add(ResearchProject{
+        });
+        data.store.add(ResearchProject{
         .id = "LGP-002",
         .title = "Modelo Integrado de Risco e Resiliencia Territorial",
         .coordinator = "Nucleo Agro",
@@ -217,8 +219,8 @@ AppData buildAppData(const std::string& workspaceRoot) {
         .hasValidationPlan = true,
         .hasPublicPolicyAlignment = true,
         .hasReadme = true,
-    });
-    data.store.add(ResearchProject{
+        });
+        data.store.add(ResearchProject{
         .id = "LGP-003",
         .title = "Estudo de Reprodutibilidade Computacional Multilinguagem",
         .coordinator = "Equipe Engenharia",
@@ -258,7 +260,8 @@ AppData buildAppData(const std::string& workspaceRoot) {
         .hasComplexityGuard = true,
         .hasCycleGuard = false,
         .hasFormatLint = true,
-    });
+        });
+    }
 
     domain::InventoryScanner scanner;
     data.inventory = scanner.scan(workspaceRoot);
@@ -385,13 +388,13 @@ bool runGui(AppData* data) {
         );
 
         if (requestRescan) {
-            *data = buildAppData(data->workspaceRoot);
+            *data = buildAppData(data->workspaceRoot, data->includeDemoProjects);
             workspaceFeedback = "Inventario reescanado com sucesso.";
         }
 
         if (!requestApplyWorkspacePath.empty()) {
             if (std::filesystem::exists(requestApplyWorkspacePath) && std::filesystem::is_directory(requestApplyWorkspacePath)) {
-                *data = buildAppData(requestApplyWorkspacePath);
+                *data = buildAppData(requestApplyWorkspacePath, data->includeDemoProjects);
                 workspaceFeedback = "Workspace atualizado manualmente.";
             } else {
                 workspaceFeedback = "Pasta invalida. Verifique o caminho informado.";
@@ -420,7 +423,8 @@ bool runGui(AppData* data) {
 
 int AppRuntime::run(int argc, char** argv) {
     const std::string workspaceRoot = resolveWorkspaceRoot(argc, argv);
-    AppData data = buildAppData(workspaceRoot);
+    const bool includeDemoProjects = hasArg(argc, argv, "--demo");
+    AppData data = buildAppData(workspaceRoot, includeDemoProjects);
 
     const bool forceConsole = hasArg(argc, argv, "--console");
     const bool forceGui = hasArg(argc, argv, "--gui");
