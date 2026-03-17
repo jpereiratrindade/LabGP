@@ -276,7 +276,7 @@ AppData buildAppData(const std::string& workspaceRoot) {
             .line = "Inventario Workspace",
             .status = entry.score.total >= 70 ? ResearchStatus::Approved : ResearchStatus::Proposal,
             .openImpediments = entry.score.total >= 60 ? 0 : 1,
-            .softwareIntensive = true,
+            .softwareIntensive = entry.score.reliabilityApplicable,
             .hasMethodology = entry.score.maturity >= 25,
             .hasWorkPlan = entry.score.maturity >= 75,
             .hasTimeline = entry.score.maturity >= 50,

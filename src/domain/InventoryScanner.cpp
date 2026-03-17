@@ -1,8 +1,10 @@
 #include "domain/InventoryScanner.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <initializer_list>
+#include <string>
 
 #include "domain/ResearchProject.hpp"
 
@@ -17,6 +19,37 @@ bool hasAnyFile(const fs::path& root, std::initializer_list<const char*> names) 
         if (fs::exists(root / name)) {
             return true;
         }
+    }
+    return false;
+}
+
+std::string toLowerAscii(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return value;
+}
+
+std::vector<std::string> listDocFileNames(const fs::path& root) {
+    std::vector<std::string> names;
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(root, fs::directory_options::skip_permission_denied, ec)) {
+        if (!entry.is_regular_file(ec)) continue;
+        const std::string ext = toLowerAscii(entry.path().extension().string());
+        if (ext == ".md" || ext == ".pdf" || ext == ".docx" || ext == ".xlsx" || ext == ".csv") {
+            names.push_back(toLowerAscii(entry.path().filename().string()));
+        }
+    }
+    return names;
+}
+
+bool hasDossierSignals(const fs::path& root) {
+    return !listDocFileNames(root).empty();
+}
+
+bool containsToken(const std::vector<std::string>& names, const std::string& token) {
+    for (const auto& n : names) {
+        if (n.find(token) != std::string::npos) return true;
     }
     return false;
 }
@@ -92,36 +125,53 @@ std::vector<InventoryEntry> InventoryScanner::scan(const std::string& workspaceR
         }
 
         const fs::path repoPath = dirEntry.path();
-        if (!fs::exists(repoPath / ".git")) {
-            continue;
-        }
+        const bool isGitRepo = fs::exists(repoPath / ".git");
+        const bool isDossier = hasDossierSignals(repoPath);
+        if (!isGitRepo && !isDossier) continue;
 
         ResearchProject probe;
         probe.id = repoPath.filename().string();
         probe.title = probe.id;
-        probe.hasReadme = hasAnyFile(repoPath, {"README.md", "README.txt", "README"});
-        probe.hasCi = hasCi(repoPath);
-        probe.hasTests = hasTests(repoPath);
-        probe.softwareIntensive = true;
-        probe.hasAdr = hasAdr(repoPath);
-        probe.hasDdd = hasDdd(repoPath);
-        probe.hasDai = hasDai(repoPath);
-        probe.governanceItems = hasGovernance(repoPath) ? 1 : 0;
-        probe.hasMethodology = probe.hasAdr || probe.hasDdd;
-        probe.hasWorkPlan = hasWorkPlanDoc(repoPath) || probe.hasDai;
-        probe.hasTimeline = probe.hasWorkPlan;
-        probe.hasBudgetPlan = hasBudgetDoc(repoPath);
-        probe.plannedDeliverables = probe.hasWorkPlan ? 4 : 0;
-        probe.deliveredDeliverables = probe.hasReadme ? 1 : 0;
-        probe.reviewMeetings = probe.governanceItems;
+        if (isGitRepo) {
+            probe.hasReadme = hasAnyFile(repoPath, {"README.md", "README.txt", "README"});
+            probe.hasCi = hasCi(repoPath);
+            probe.hasTests = hasTests(repoPath);
+            probe.softwareIntensive = true;
+            probe.hasAdr = hasAdr(repoPath);
+            probe.hasDdd = hasDdd(repoPath);
+            probe.hasDai = hasDai(repoPath);
+            probe.governanceItems = hasGovernance(repoPath) ? 1 : 0;
+            probe.hasMethodology = probe.hasAdr || probe.hasDdd;
+            probe.hasWorkPlan = hasWorkPlanDoc(repoPath) || probe.hasDai;
+            probe.hasTimeline = probe.hasWorkPlan;
+            probe.hasBudgetPlan = hasBudgetDoc(repoPath);
+            probe.plannedDeliverables = probe.hasWorkPlan ? 4 : 0;
+            probe.deliveredDeliverables = probe.hasReadme ? 1 : 0;
+            probe.reviewMeetings = probe.governanceItems;
 
-        probe.hasAsanUbsan = hasSanitizersConfig(repoPath);
-        probe.hasLeakChecks = probe.hasAsanUbsan;
-        probe.hasStaticAnalysis = hasStaticAnalysisConfig(repoPath);
-        probe.hasStrictWarnings = hasStrictWarningsConfig(repoPath);
-        probe.hasComplexityGuard = hasComplexityGuardConfig(repoPath);
-        probe.hasCycleGuard = hasCycleGuardConfig(repoPath);
-        probe.hasFormatLint = fs::exists(repoPath / ".clang-format");
+            probe.hasAsanUbsan = hasSanitizersConfig(repoPath);
+            probe.hasLeakChecks = probe.hasAsanUbsan;
+            probe.hasStaticAnalysis = hasStaticAnalysisConfig(repoPath);
+            probe.hasStrictWarnings = hasStrictWarningsConfig(repoPath);
+            probe.hasComplexityGuard = hasComplexityGuardConfig(repoPath);
+            probe.hasCycleGuard = hasCycleGuardConfig(repoPath);
+            probe.hasFormatLint = fs::exists(repoPath / ".clang-format");
+        } else {
+            const auto names = listDocFileNames(repoPath);
+            probe.softwareIntensive = false;
+            probe.hasReadme = containsToken(names, "readme") || containsToken(names, "projeto") || containsToken(names, "proposta");
+            probe.hasMethodology = containsToken(names, "metod") || containsToken(names, "projeto") || containsToken(names, "proposta");
+            probe.hasWorkPlan = containsToken(names, "plano") || containsToken(names, "proposta") || containsToken(names, "projeto");
+            probe.hasTimeline = containsToken(names, "cronograma") || containsToken(names, "edital");
+            probe.hasBudgetPlan = containsToken(names, "orc") || containsToken(names, "budget");
+            probe.hasValidationPlan = containsToken(names, "avali") || containsToken(names, "valid");
+            probe.hasDataGovernance = containsToken(names, "dados") || containsToken(names, "govern");
+            probe.hasTerritorialNetwork = containsToken(names, "territorial") || containsToken(names, "sait");
+            probe.hasPublicPolicyAlignment = containsToken(names, "politica") || containsToken(names, "publica");
+            probe.plannedDeliverables = 4;
+            probe.deliveredDeliverables = 1;
+            probe.reviewMeetings = 1;
+        }
 
         InventoryEntry inv;
         inv.repoName = probe.id;
