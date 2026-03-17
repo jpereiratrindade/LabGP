@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(LABGP_WARNINGS_AS_ERRORS "Treat warnings as errors" OFF)
-option(LABGP_ENABLE_GUI "Build SDL2/OpenGL/ImGui dashboard" ON)
+option(LABGP_ENABLE_GUI "Build SDL2/OpenGL/ImGui dashboard" OFF)
 
 add_library(labgp_domain
     src/domain/ResearchProjectStore.cpp

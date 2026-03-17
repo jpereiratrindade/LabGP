@@ -84,12 +84,12 @@ AppData buildAppData() {
     });
     data.store.add(ResearchProject{
         .id = "LGP-002",
-        .title = "Modelo de Risco e Resiliencia da Producao Agropecuaria em SAIT",
+        .title = "Modelo Integrado de Risco e Resiliencia Territorial",
         .coordinator = "Nucleo Agro",
-        .institution = "Rede Embrapa + Parceiros",
+        .institution = "Rede Institucional de Pesquisa",
         .program = "Resiliencia Territorial",
         .thematicAxis = "Socioecologia",
-        .callNotice = "Chamada 06/2025 - Universal",
+        .callNotice = "Chamada de Pesquisa Aplicada",
         .projectType = "PD&I",
         .startDate = "2026-05-01",
         .endDate = "2029-04-30",

@@ -12,7 +12,7 @@ LabGP nasce como um projeto-irmao do LabGestao, com foco em ciclo de vida de pro
 - Confiabilidade tecnica para projetos intensivos em software (CI, analise estatica, sanitizers)
 
 Exemplo de uso direto:
-- Projetos em avaliacao de agencias/instituicoes (ex.: caso SAIT/Embrapa)
+- Projetos em avaliacao de agencias/instituicoes
 - Projetos de pesquisa com forte componente territorial, metodologico e de politica publica
 
 ## Build
