@@ -29,6 +29,7 @@ ctest --test-dir build --output-on-failure
 - `./build/LabGP --console` força modo texto.
 - `./build/LabGP --gui` força tentativa de GUI.
 - Na GUI, selecione a pasta de projetos pelo menu: `Arquivo > Selecionar pasta de projetos...`.
+- Na GUI, use `Arquivo > Reescanear agora` para atualizar o inventario da pasta atual.
 - `./build/LabGP --workspace /caminho/para/repositorios` seleciona a pasta de projetos a analisar.
 - `./build/LabGP --workspace=/caminho/para/repositorios` alternativa equivalente.
 - `LABGP_WORKSPACE=/caminho/para/repositorios ./build/LabGP` define workspace por variavel de ambiente.

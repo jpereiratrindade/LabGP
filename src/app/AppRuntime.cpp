@@ -360,6 +360,7 @@ bool runGui(AppData* data) {
     std::string workspaceFeedback;
     bool done = false;
     while (!done) {
+        bool requestRescan = false;
         std::string requestApplyWorkspacePath;
         SDL_Event event;
         while (SDL_PollEvent(&event) != 0) {
@@ -378,9 +379,15 @@ bool runGui(AppData* data) {
             data->store.all(),
             data->inventory,
             data->workspaceRoot,
+            &requestRescan,
             &requestApplyWorkspacePath,
             workspaceFeedback
         );
+
+        if (requestRescan) {
+            *data = buildAppData(data->workspaceRoot);
+            workspaceFeedback = "Inventario reescanado com sucesso.";
+        }
 
         if (!requestApplyWorkspacePath.empty()) {
             if (std::filesystem::exists(requestApplyWorkspacePath) && std::filesystem::is_directory(requestApplyWorkspacePath)) {

@@ -140,6 +140,7 @@ void GuiDashboard::render(
     const std::vector<domain::ResearchProject>& projects,
     const std::vector<domain::InventoryEntry>& inventory,
     const std::string& workspaceRoot,
+    bool* requestRescan,
     std::string* requestApplyWorkspacePath,
     const std::string& workspaceFeedback
 ) const {
@@ -159,6 +160,11 @@ void GuiDashboard::render(
                 std::snprintf(m_workspacePathBuf.data(), m_workspacePathBuf.size(), "%s", workspaceRoot.c_str());
                 m_workspaceNavPath = workspaceRoot;
                 ImGui::OpenPopup("workspace_modal");
+            }
+            if (ImGui::MenuItem("Reescanear agora")) {
+                if (requestRescan) {
+                    *requestRescan = true;
+                }
             }
             ImGui::EndMenu();
         }

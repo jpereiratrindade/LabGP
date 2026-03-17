@@ -15,6 +15,7 @@ public:
         const std::vector<domain::ResearchProject>& projects,
         const std::vector<domain::InventoryEntry>& inventory,
         const std::string& workspaceRoot,
+        bool* requestRescan,
         std::string* requestApplyWorkspacePath,
         const std::string& workspaceFeedback
     ) const;
