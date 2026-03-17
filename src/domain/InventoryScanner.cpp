@@ -68,6 +68,14 @@ bool hasComplexityGuardConfig(const fs::path& root) {
     return hasAnyFile(root, {"lizard.cfg", ".lizard", "oclint.json"});
 }
 
+bool hasWorkPlanDoc(const fs::path& root) {
+    return hasAnyFile(root, {"ROADMAP.md", "docs/roadmap.md", "docs/plan.md", "PROJECT_PLAN.md"});
+}
+
+bool hasBudgetDoc(const fs::path& root) {
+    return hasAnyFile(root, {"BUDGET.md", "docs/budget.md", "funding.md", "docs/funding.md"});
+}
+
 } // namespace
 
 std::vector<InventoryEntry> InventoryScanner::scan(const std::string& workspaceRoot) const {
@@ -94,10 +102,18 @@ std::vector<InventoryEntry> InventoryScanner::scan(const std::string& workspaceR
         probe.hasReadme = hasAnyFile(repoPath, {"README.md", "README.txt", "README"});
         probe.hasCi = hasCi(repoPath);
         probe.hasTests = hasTests(repoPath);
+        probe.softwareIntensive = true;
         probe.hasAdr = hasAdr(repoPath);
         probe.hasDdd = hasDdd(repoPath);
         probe.hasDai = hasDai(repoPath);
         probe.governanceItems = hasGovernance(repoPath) ? 1 : 0;
+        probe.hasMethodology = probe.hasAdr || probe.hasDdd;
+        probe.hasWorkPlan = hasWorkPlanDoc(repoPath) || probe.hasDai;
+        probe.hasTimeline = probe.hasWorkPlan;
+        probe.hasBudgetPlan = hasBudgetDoc(repoPath);
+        probe.plannedDeliverables = probe.hasWorkPlan ? 4 : 0;
+        probe.deliveredDeliverables = probe.hasReadme ? 1 : 0;
+        probe.reviewMeetings = probe.governanceItems;
 
         probe.hasAsanUbsan = hasSanitizersConfig(repoPath);
         probe.hasLeakChecks = probe.hasAsanUbsan;

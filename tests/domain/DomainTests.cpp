@@ -22,6 +22,14 @@ int main() {
         .coordinator = "Equipe",
         .line = "Linha",
         .status = ResearchStatus::Proposal,
+        .softwareIntensive = true,
+        .hasMethodology = true,
+        .hasWorkPlan = true,
+        .hasTimeline = true,
+        .hasBudgetPlan = true,
+        .plannedDeliverables = 4,
+        .deliveredDeliverables = 2,
+        .reviewMeetings = 2,
         .hasReadme = true,
         .hasCi = true,
         .hasTests = false,
@@ -45,7 +53,8 @@ int main() {
     require(score.operational == 70, "score operacional esperado");
     require(score.maturity == 75, "score maturidade esperado");
     require(score.reliability == 42, "score confiabilidade esperado");
-    require(score.total == 64, "score total esperado");
+    require(score.execution == 57, "score execucao esperado");
+    require(score.total == 62, "score total esperado");
 
     std::cout << "OK\n";
     return 0;

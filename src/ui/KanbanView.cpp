@@ -8,8 +8,9 @@
 namespace labgp::ui {
 
 std::string KanbanView::render(const std::vector<domain::ResearchProject>& projects) const {
-    const std::array<domain::ResearchStatus, 6> orderedStatus = {
+    const std::array<domain::ResearchStatus, 7> orderedStatus = {
         domain::ResearchStatus::Proposal,
+        domain::ResearchStatus::InReview,
         domain::ResearchStatus::Approved,
         domain::ResearchStatus::Execution,
         domain::ResearchStatus::Analysis,
@@ -29,7 +30,9 @@ std::string KanbanView::render(const std::vector<domain::ResearchProject>& proje
             }
             const auto score = domain::computeScore(project);
             out << " - " << project.id << " | " << project.title
-                << " | Score Total: " << score.total << "\n";
+                << " | Tipo: " << (project.softwareIntensive ? "Software" : "Pesquisa")
+                << " | Total: " << score.total
+                << " | Exec: " << score.execution << "\n";
             ++count;
         }
         if (count == 0) {

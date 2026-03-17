@@ -1,14 +1,19 @@
 # LabGP
 
-Gestao de Projetos de Pesquisa em C++.
+Gestao de Projetos de Pesquisa lato sensu (com ou sem software).
 
 ## Objetivo
 
 LabGP nasce como um projeto-irmao do LabGestao, com foco em ciclo de vida de projetos de pesquisa:
 - Proposta, aprovacao, execucao, analise, publicacao, encerramento
 - DAI (Decision, Action, Impediment)
-- Maturidade de engenharia (ADR, DDD, governanca)
-- Confiabilidade tecnica (checks de CI, analise estatica, sanitizers)
+- Gestao de execucao real (metodologia, plano de trabalho, cronograma, orcamento, entregas, acompanhamento)
+- Maturidade de engenharia e governanca (ADR, DDD, DAI)
+- Confiabilidade tecnica para projetos intensivos em software (CI, analise estatica, sanitizers)
+
+Exemplo de uso direto:
+- Projetos em avaliacao de agencias/instituicoes (ex.: caso SAIT/Embrapa)
+- Projetos de pesquisa com forte componente territorial, metodologico e de politica publica
 
 ## Build
 
@@ -23,6 +28,15 @@ ctest --test-dir build --output-on-failure
 - `./build/LabGP` abre GUI (quando SDL2/OpenGL/ImGui estiverem disponiveis), com fallback para console.
 - `./build/LabGP --console` força modo texto.
 - `./build/LabGP --gui` força tentativa de GUI.
+
+## Modelo de avaliacao
+
+- `Operacional` (base tecnica ou base documental, conforme tipo do projeto)
+- `Maturidade` (ADR/DDD/DAI/Governanca)
+- `Confiabilidade` (aplicavel a projetos intensivos em software)
+- `Execucao` (metodologia, plano, cronograma, orcamento, entregas e impedimentos)
+- Formula atual: `Total = 0.30*Oper + 0.25*Matur + 0.20*Confiab + 0.25*Exec`
+- `Confiab` pode ser `N/A` para projetos nao intensivos em software (sem penalizacao indevida)
 
 ## Estrutura
 

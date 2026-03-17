@@ -7,6 +7,7 @@ namespace labgp::domain {
 std::string toString(ResearchStatus status) {
     switch (status) {
         case ResearchStatus::Proposal: return "Proposta";
+        case ResearchStatus::InReview: return "Em avaliacao";
         case ResearchStatus::Approved: return "Aprovado";
         case ResearchStatus::Execution: return "Execucao";
         case ResearchStatus::Analysis: return "Analise";

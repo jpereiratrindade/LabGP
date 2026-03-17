@@ -20,13 +20,15 @@ const char* bandColorLabel(int total) {
 }
 
 void renderProjectsTab(const std::vector<domain::ResearchProject>& projects) {
-    if (ImGui::BeginTable("projects_table", 7, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
+    if (ImGui::BeginTable("projects_table", 9, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
         ImGui::TableSetupColumn("ID");
         ImGui::TableSetupColumn("Titulo");
         ImGui::TableSetupColumn("Status");
+        ImGui::TableSetupColumn("Tipo");
         ImGui::TableSetupColumn("Total");
         ImGui::TableSetupColumn("Oper");
         ImGui::TableSetupColumn("Matur");
+        ImGui::TableSetupColumn("Exec");
         ImGui::TableSetupColumn("Conf");
         ImGui::TableHeadersRow();
 
@@ -47,10 +49,17 @@ void renderProjectsTab(const std::vector<domain::ResearchProject>& projects) {
             ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted(p->id.c_str());
             ImGui::TableSetColumnIndex(1); ImGui::TextUnformatted(p->title.c_str());
             ImGui::TableSetColumnIndex(2); ImGui::TextUnformatted(domain::toString(p->status).c_str());
-            ImGui::TableSetColumnIndex(3); ImGui::Text("%d", score.total);
-            ImGui::TableSetColumnIndex(4); ImGui::Text("%d", score.operational);
-            ImGui::TableSetColumnIndex(5); ImGui::Text("%d", score.maturity);
-            ImGui::TableSetColumnIndex(6); ImGui::Text("%d", score.reliability);
+            ImGui::TableSetColumnIndex(3); ImGui::TextUnformatted(p->softwareIntensive ? "Software" : "Pesquisa");
+            ImGui::TableSetColumnIndex(4); ImGui::Text("%d", score.total);
+            ImGui::TableSetColumnIndex(5); ImGui::Text("%d", score.operational);
+            ImGui::TableSetColumnIndex(6); ImGui::Text("%d", score.maturity);
+            ImGui::TableSetColumnIndex(7); ImGui::Text("%d", score.execution);
+            ImGui::TableSetColumnIndex(8);
+            if (score.reliabilityApplicable) {
+                ImGui::Text("%d", score.reliability);
+            } else {
+                ImGui::TextUnformatted("N/A");
+            }
         }
 
         ImGui::EndTable();
@@ -58,8 +67,9 @@ void renderProjectsTab(const std::vector<domain::ResearchProject>& projects) {
 }
 
 void renderKanbanTab(const std::vector<domain::ResearchProject>& projects) {
-    const std::array<domain::ResearchStatus, 6> orderedStatus = {
+    const std::array<domain::ResearchStatus, 7> orderedStatus = {
         domain::ResearchStatus::Proposal,
+        domain::ResearchStatus::InReview,
         domain::ResearchStatus::Approved,
         domain::ResearchStatus::Execution,
         domain::ResearchStatus::Analysis,
@@ -83,7 +93,7 @@ void renderKanbanTab(const std::vector<domain::ResearchProject>& projects) {
             any = true;
             ImGui::BulletText("%s", p.id.c_str());
             ImGui::TextWrapped("%s", p.title.c_str());
-            ImGui::Text("Score: %d (%s)", score.total, bandColorLabel(score.total));
+            ImGui::Text("Score: %d (%s) | Exec: %d", score.total, bandColorLabel(score.total), score.execution);
             ImGui::Spacing();
         }
         if (!any) {
