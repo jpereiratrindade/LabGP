@@ -144,6 +144,8 @@ void GuiDashboard::render(
     std::string* requestApplyWorkspacePath,
     const std::string& workspaceFeedback
 ) const {
+    bool requestOpenWorkspaceModal = false;
+
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize, ImGuiCond_Always);
 
@@ -156,10 +158,7 @@ void GuiDashboard::render(
     if (ImGui::BeginMenuBar()) {
         if (ImGui::BeginMenu("Arquivo")) {
             if (ImGui::MenuItem("Selecionar pasta de projetos...")) {
-                m_showWorkspaceModal = true;
-                std::snprintf(m_workspacePathBuf.data(), m_workspacePathBuf.size(), "%s", workspaceRoot.c_str());
-                m_workspaceNavPath = workspaceRoot;
-                ImGui::OpenPopup("workspace_modal");
+                requestOpenWorkspaceModal = true;
             }
             if (ImGui::MenuItem("Reescanear agora")) {
                 if (requestRescan) {
@@ -174,10 +173,7 @@ void GuiDashboard::render(
     ImGui::TextUnformatted("LabGP - Gestao de Projetos de Pesquisa");
     ImGui::Text("Workspace: %s", workspaceRoot.c_str());
     if (ImGui::Button("Selecionar Pasta")) {
-        m_showWorkspaceModal = true;
-        std::snprintf(m_workspacePathBuf.data(), m_workspacePathBuf.size(), "%s", workspaceRoot.c_str());
-        m_workspaceNavPath = workspaceRoot;
-        ImGui::OpenPopup("workspace_modal");
+        requestOpenWorkspaceModal = true;
     }
     ImGui::SameLine();
     if (ImGui::Button("Reescanear")) {
@@ -189,6 +185,13 @@ void GuiDashboard::render(
         ImGui::TextColored(ImVec4(0.55f, 0.82f, 0.55f, 1.0f), "%s", workspaceFeedback.c_str());
     }
     ImGui::Separator();
+
+    if (requestOpenWorkspaceModal) {
+        m_showWorkspaceModal = true;
+        std::snprintf(m_workspacePathBuf.data(), m_workspacePathBuf.size(), "%s", workspaceRoot.c_str());
+        m_workspaceNavPath = workspaceRoot;
+        ImGui::OpenPopup("workspace_modal");
+    }
 
     if (m_showWorkspaceModal) {
         namespace fs = std::filesystem;
