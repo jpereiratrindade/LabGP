@@ -1,6 +1,10 @@
 #include "app/AppRuntime.hpp"
 
 #include <algorithm>
+#include <array>
+#include <cstdlib>
+#include <cstdio>
+#include <filesystem>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -12,20 +16,20 @@
 #if LABGP_HAS_GUI_UI
 #include "ui/GuiDashboard.hpp"
 
-#include "backends/imgui_impl_opengl3.h"
 #include "backends/imgui_impl_sdl2.h"
+#include "imgui_impl_sdlrenderer2.h"
 #include "imgui.h"
 
 #include <SDL2/SDL.h>
-#include <SDL2/SDL_opengl.h>
 #endif
 
 namespace labgp::app {
 namespace {
 
-constexpr const char* kWorkspaceRoot = "/run/media/jpereiratrindade/labeco10T/dev/cpp";
+constexpr const char* kDefaultWorkspaceRoot = "/run/media/jpereiratrindade/labeco10T/dev/cpp";
 
 struct AppData {
+    std::string workspaceRoot;
     domain::ResearchProjectStore store;
     std::vector<domain::InventoryEntry> inventory;
 };
@@ -37,10 +41,113 @@ bool hasArg(int argc, char** argv, const char* option) {
     return false;
 }
 
-AppData buildAppData() {
+std::string getArgValue(int argc, char** argv, const char* option) {
+    const std::string prefix = std::string(option) + "=";
+    for (int i = 1; i < argc; ++i) {
+        const std::string current = argv[i];
+        if (current.rfind(prefix, 0) == 0) {
+            return current.substr(prefix.size());
+        }
+        if (current == option && i + 1 < argc) {
+            return argv[i + 1];
+        }
+    }
+    return {};
+}
+
+bool commandExists(const char* command) {
+#if defined(_WIN32)
+    (void) command;
+    return false;
+#else
+    std::string cmd = "command -v ";
+    cmd += command;
+    cmd += " >/dev/null 2>&1";
+    return std::system(cmd.c_str()) == 0;
+#endif
+}
+
+bool runPickerCommand(const std::string& command, std::string* selectedPath) {
+    if (!selectedPath) return false;
+    selectedPath->clear();
+
+    std::array<char, 512> buffer{};
+    FILE* pipe = popen(command.c_str(), "r");
+    if (!pipe) return false;
+
+    while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) {
+        *selectedPath += buffer.data();
+    }
+
+    const int rc = pclose(pipe);
+    if (rc != 0) return false;
+
+    while (!selectedPath->empty() && (selectedPath->back() == '\n' || selectedPath->back() == '\r')) {
+        selectedPath->pop_back();
+    }
+    return !selectedPath->empty();
+}
+
+std::string shellEscapeSingleQuoted(const std::string& s) {
+    std::string out;
+    out.reserve(s.size() + 8);
+    out.push_back('\'');
+    for (char c : s) {
+        if (c == '\'') out += "'\\''";
+        else out.push_back(c);
+    }
+    out.push_back('\'');
+    return out;
+}
+
+std::string selectDirectoryWithSystemDialog(const std::string& initialDir) {
+#if defined(_WIN32)
+    (void) initialDir;
+    return {};
+#elif defined(__APPLE__)
+    std::string selected;
+    const std::string cmd =
+        "osascript -e 'set p to POSIX path of (choose folder with prompt \"Selecionar Workspace\")' 2>/dev/null";
+    if (runPickerCommand(cmd, &selected)) return selected;
+    return {};
+#else
+    (void) initialDir;
+    std::string selected;
+    if (commandExists("kdialog")) {
+        const std::string cmd = "kdialog --getexistingdirectory " + shellEscapeSingleQuoted(initialDir) + " 2>/dev/null";
+        if (runPickerCommand(cmd, &selected)) return selected;
+    }
+    if (commandExists("zenity")) {
+        const std::string cmd = "zenity --file-selection --directory --title=\"Selecionar Workspace\" 2>/dev/null";
+        if (runPickerCommand(cmd, &selected)) return selected;
+    }
+    return {};
+#endif
+}
+
+std::string resolveWorkspaceRoot(int argc, char** argv) {
+    namespace fs = std::filesystem;
+
+    if (hasArg(argc, argv, "--pick-workspace")) {
+        const std::string picked = selectDirectoryWithSystemDialog(kDefaultWorkspaceRoot);
+        if (!picked.empty() && fs::exists(picked) && fs::is_directory(picked)) return picked;
+    }
+
+    const std::string cliWorkspace = getArgValue(argc, argv, "--workspace");
+    if (!cliWorkspace.empty() && fs::exists(cliWorkspace) && fs::is_directory(cliWorkspace)) return cliWorkspace;
+
+    const char* envWorkspace = std::getenv("LABGP_WORKSPACE");
+    if (envWorkspace && *envWorkspace && fs::exists(envWorkspace) && fs::is_directory(envWorkspace)) {
+        return envWorkspace;
+    }
+
+    return kDefaultWorkspaceRoot;
+}
+
+AppData buildAppData(const std::string& workspaceRoot) {
     using namespace labgp::domain;
 
-    AppData data;
+    AppData data{.workspaceRoot = workspaceRoot};
     data.store.add(ResearchProject{
         .id = "LGP-001",
         .title = "Mapa de Integracao dos Projetos LabEco",
@@ -154,7 +261,7 @@ AppData buildAppData() {
     });
 
     domain::InventoryScanner scanner;
-    data.inventory = scanner.scan(kWorkspaceRoot);
+    data.inventory = scanner.scan(workspaceRoot);
 
     for (size_t i = 0; i < data.inventory.size() && i < 6; ++i) {
         const auto& entry = data.inventory[i];
@@ -203,7 +310,7 @@ AppData buildAppData() {
 
 int runConsole(const AppData& data) {
     const ui::AppUI appUi(data.store);
-    std::cout << "Workspace: " << kWorkspaceRoot << "\n";
+    std::cout << "Workspace: " << data.workspaceRoot << "\n";
     std::cout << "Repositorios Git detectados: " << data.inventory.size() << "\n";
     std::cout << "Projetos em tela (demo + inventario): " << data.store.all().size() << "\n\n";
     std::cout << appUi.render();
@@ -211,19 +318,12 @@ int runConsole(const AppData& data) {
 }
 
 #if LABGP_HAS_GUI_UI
-bool runGui(const AppData& data) {
+bool runGui(AppData* data) {
+    if (!data) return false;
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER) != 0) {
         std::cerr << "SDL2 init falhou: " << SDL_GetError() << "\n";
         return false;
     }
-
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
-    SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
 
     SDL_Window* window = SDL_CreateWindow(
         "LabGP - Gestao de Projetos de Pesquisa",
@@ -231,7 +331,7 @@ bool runGui(const AppData& data) {
         SDL_WINDOWPOS_CENTERED,
         1440,
         900,
-        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI
+        SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI
     );
     if (!window) {
         std::cerr << "Falha ao criar janela SDL2: " << SDL_GetError() << "\n";
@@ -239,9 +339,13 @@ bool runGui(const AppData& data) {
         return false;
     }
 
-    SDL_GLContext glContext = SDL_GL_CreateContext(window);
-    SDL_GL_MakeCurrent(window, glContext);
-    SDL_GL_SetSwapInterval(1);
+    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    if (!renderer) {
+        std::cerr << "Falha ao criar renderer SDL2: " << SDL_GetError() << "\n";
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return false;
+    }
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -249,12 +353,13 @@ bool runGui(const AppData& data) {
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     ImGui::StyleColorsDark();
 
-    ImGui_ImplSDL2_InitForOpenGL(window, glContext);
-    ImGui_ImplOpenGL3_Init("#version 150");
+    ImGui_ImplSDL2_InitForSDLRenderer(window, renderer);
+    ImGui_ImplSDLRenderer2_Init(renderer);
 
     ui::GuiDashboard dashboard;
     bool done = false;
     while (!done) {
+        bool requestPickWorkspace = false;
         SDL_Event event;
         while (SDL_PollEvent(&event) != 0) {
             ImGui_ImplSDL2_ProcessEvent(&event);
@@ -264,25 +369,31 @@ bool runGui(const AppData& data) {
             }
         }
 
-        ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplSDL2_NewFrame();
+        ImGui_ImplSDLRenderer2_NewFrame();
         ImGui::NewFrame();
 
-        dashboard.render(data.store.all(), data.inventory, kWorkspaceRoot);
+        dashboard.render(data->store.all(), data->inventory, data->workspaceRoot, &requestPickWorkspace);
+
+        if (requestPickWorkspace) {
+            const std::string picked = selectDirectoryWithSystemDialog(data->workspaceRoot);
+            if (!picked.empty() && std::filesystem::exists(picked) && std::filesystem::is_directory(picked)) {
+                *data = buildAppData(picked);
+            }
+        }
 
         ImGui::Render();
-        glViewport(0, 0, static_cast<int>(io.DisplaySize.x), static_cast<int>(io.DisplaySize.y));
-        glClearColor(0.06f, 0.08f, 0.11f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-        SDL_GL_SwapWindow(window);
+        SDL_SetRenderDrawColor(renderer, 15, 20, 28, 255);
+        SDL_RenderClear(renderer);
+        ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), renderer);
+        SDL_RenderPresent(renderer);
     }
 
-    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplSDLRenderer2_Shutdown();
     ImGui_ImplSDL2_Shutdown();
     ImGui::DestroyContext();
 
-    SDL_GL_DeleteContext(glContext);
+    SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
     return true;
@@ -292,14 +403,15 @@ bool runGui(const AppData& data) {
 } // namespace
 
 int AppRuntime::run(int argc, char** argv) {
-    const AppData data = buildAppData();
+    const std::string workspaceRoot = resolveWorkspaceRoot(argc, argv);
+    AppData data = buildAppData(workspaceRoot);
 
     const bool forceConsole = hasArg(argc, argv, "--console");
     const bool forceGui = hasArg(argc, argv, "--gui");
 
 #if LABGP_HAS_GUI_UI
     if (!forceConsole && (forceGui || !forceConsole)) {
-        if (runGui(data)) {
+        if (runGui(&data)) {
             return 0;
         }
         std::cerr << "Fallback para modo console.\n";

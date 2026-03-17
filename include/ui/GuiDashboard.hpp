@@ -13,7 +13,8 @@ public:
     void render(
         const std::vector<domain::ResearchProject>& projects,
         const std::vector<domain::InventoryEntry>& inventory,
-        const std::string& workspaceRoot
+        const std::string& workspaceRoot,
+        bool* requestPickWorkspace
     ) const;
 };
 

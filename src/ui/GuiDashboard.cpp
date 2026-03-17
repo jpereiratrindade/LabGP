@@ -136,7 +136,8 @@ void renderInventoryTab(const std::vector<domain::InventoryEntry>& inventory) {
 void GuiDashboard::render(
     const std::vector<domain::ResearchProject>& projects,
     const std::vector<domain::InventoryEntry>& inventory,
-    const std::string& workspaceRoot
+    const std::string& workspaceRoot,
+    bool* requestPickWorkspace
 ) const {
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize, ImGuiCond_Always);
@@ -145,7 +146,19 @@ void GuiDashboard::render(
                              ImGuiWindowFlags_NoMove |
                              ImGuiWindowFlags_NoSavedSettings;
 
-    ImGui::Begin("LabGP", nullptr, flags);
+    ImGui::Begin("LabGP", nullptr, flags | ImGuiWindowFlags_MenuBar);
+
+    if (ImGui::BeginMenuBar()) {
+        if (ImGui::BeginMenu("Arquivo")) {
+            if (ImGui::MenuItem("Selecionar pasta de projetos...")) {
+                if (requestPickWorkspace) {
+                    *requestPickWorkspace = true;
+                }
+            }
+            ImGui::EndMenu();
+        }
+        ImGui::EndMenuBar();
+    }
 
     ImGui::TextUnformatted("LabGP - Gestao de Projetos de Pesquisa");
     ImGui::Text("Workspace: %s", workspaceRoot.c_str());

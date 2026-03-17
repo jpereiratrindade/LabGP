@@ -25,9 +25,14 @@ ctest --test-dir build --output-on-failure
 
 ## Execucao
 
-- `./build/LabGP` abre GUI (quando SDL2/OpenGL/ImGui estiverem disponiveis), com fallback para console.
+- `./build/LabGP` abre GUI (SDL2 + ImGui), com fallback para console.
 - `./build/LabGP --console` força modo texto.
 - `./build/LabGP --gui` força tentativa de GUI.
+- Na GUI, selecione a pasta de projetos pelo menu: `Arquivo > Selecionar pasta de projetos...`.
+- `./build/LabGP --workspace /caminho/para/repositorios` seleciona a pasta de projetos a analisar.
+- `./build/LabGP --workspace=/caminho/para/repositorios` alternativa equivalente.
+- `LABGP_WORKSPACE=/caminho/para/repositorios ./build/LabGP` define workspace por variavel de ambiente.
+- `./build/LabGP --pick-workspace` tenta abrir seletor de pasta do sistema (kdialog/zenity/osascript).
 
 ## Modelo de avaliacao
 
