@@ -1,10 +1,22 @@
-# DAI
+# DAI LabGP
 
-## Decision
-Iniciar com CLI + dominio testavel antes da UI completa.
+## Objetivo
+Formalizar `Decision`, `Action` e `Impediment` para garantir governanca leve e rastreavel.
 
-## Action
-Implementar scanner de repositorios e kanban na proxima iteracao.
+## Regras
+- Todo impedimento critico precisa de dono e prazo.
+- Toda decisao estrutural referencia ADR.
+- Toda mudanca de regra de dominio referencia DDD + teste.
 
-## Impediment
-Definir fonte padrao de dados para sincronizacao com projetos existentes.
+## Estados
+- `Aberto`
+- `Em execucao`
+- `Resolvido`
+- `Escalado`
+
+## Minimo de registro
+- contexto
+- decisao
+- acoes com responsavel
+- impedimentos
+- evidencias (commit/teste/doc)

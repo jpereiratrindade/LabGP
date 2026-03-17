@@ -87,3 +87,13 @@ if(BUILD_TESTING)
     add_test(NAME LabGPDomainTests COMMAND LabGPDomainTests)
     add_test(NAME LabGPConsoleUiTests COMMAND LabGPConsoleUiTests)
 endif()
+
+find_package(Doxygen QUIET)
+if(DOXYGEN_FOUND)
+    add_custom_target(doc
+        COMMAND ${DOXYGEN_EXECUTABLE} ${CMAKE_SOURCE_DIR}/docs/engineering/Doxyfile.min
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Gerando documentacao Doxygen do LabGP"
+        VERBATIM
+    )
+endif()

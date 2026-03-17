@@ -22,6 +22,7 @@ public:
 
 private:
     mutable bool m_showWorkspaceModal{false};
+    mutable bool m_showHelpModal{false};
     mutable std::array<char, 1024> m_workspacePathBuf{};
     mutable std::string m_workspaceNavPath;
 };

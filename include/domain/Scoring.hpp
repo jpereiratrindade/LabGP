@@ -9,6 +9,8 @@ struct ScoreBreakdown {
     int maturity{0};
     int reliability{0};
     int execution{0};
+    int institutional{0};
+    int researcher{0};
     int total{0};
     bool reliabilityApplicable{true};
 };

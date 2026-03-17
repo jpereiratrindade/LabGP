@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
+#include <fstream>
 #include <initializer_list>
+#include <sstream>
 #include <string>
 
 #include "domain/ResearchProject.hpp"
@@ -43,6 +45,20 @@ std::vector<std::string> listDocFileNames(const fs::path& root) {
     return names;
 }
 
+std::string loadDossierTextCorpus(const fs::path& root) {
+    std::ostringstream corpus;
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(root, fs::directory_options::skip_permission_denied, ec)) {
+        if (!entry.is_regular_file(ec)) continue;
+        const std::string ext = toLowerAscii(entry.path().extension().string());
+        if (ext != ".md" && ext != ".txt") continue;
+        std::ifstream in(entry.path());
+        if (!in.is_open()) continue;
+        corpus << in.rdbuf() << "\n";
+    }
+    return toLowerAscii(corpus.str());
+}
+
 bool hasDossierSignals(const fs::path& root) {
     return !listDocFileNames(root).empty();
 }
@@ -52,6 +68,43 @@ bool containsToken(const std::vector<std::string>& names, const std::string& tok
         if (n.find(token) != std::string::npos) return true;
     }
     return false;
+}
+
+bool containsToken(const std::string& text, const std::string& token) {
+    return text.find(token) != std::string::npos;
+}
+
+int countGroups(const std::vector<std::vector<std::string>>& groups, const std::vector<std::string>& names, const std::string& corpus) {
+    int total = 0;
+    for (const auto& group : groups) {
+        bool hit = false;
+        for (const auto& token : group) {
+            if (containsToken(names, token) || containsToken(corpus, token)) {
+                hit = true;
+                break;
+            }
+        }
+        if (hit) ++total;
+    }
+    return total;
+}
+
+ResearchStatus inferStatusFromSignals(const std::vector<std::string>& names, const std::string& corpus) {
+    auto hasAny = [&](std::initializer_list<const char*> tokens) {
+        for (const char* token : tokens) {
+            const std::string t = token;
+            if (containsToken(names, t) || containsToken(corpus, t)) return true;
+        }
+        return false;
+    };
+
+    if (hasAny({"encerrado", "concluido", "finalizado", "prestacao_final"})) return ResearchStatus::Closed;
+    if (hasAny({"publicacao", "artigo", "paper", "patente"})) return ResearchStatus::Publication;
+    if (hasAny({"analise", "avaliacao_tecnica", "parecer"})) return ResearchStatus::Analysis;
+    if (hasAny({"execucao", "andamento", "em_execucao", "workplan"})) return ResearchStatus::Execution;
+    if (hasAny({"aprovado", "homologado", "deferido"})) return ResearchStatus::Approved;
+    if (hasAny({"submetido", "submissao", "proposta_enviada", "em_avaliacao", "edital"})) return ResearchStatus::InReview;
+    return ResearchStatus::Proposal;
 }
 
 bool hasCi(const fs::path& root) {
@@ -176,7 +229,33 @@ std::vector<InventoryEntry> InventoryScanner::scan(const std::string& workspaceR
         InventoryEntry inv;
         inv.repoName = probe.id;
         inv.repoPath = repoPath.string();
-        inv.integrated = true;
+        inv.source = isGitRepo ? "Git" : "Dossie";
+        if (isDossier) {
+            const auto names = listDocFileNames(repoPath);
+            const std::string corpus = loadDossierTextCorpus(repoPath);
+            inv.inferredStatus = inferStatusFromSignals(names, corpus);
+
+            const std::vector<std::vector<std::string>> innovationGroups = {
+                {"inov", "sociotecnica", "tecnolog"},
+                {"protocolo", "metodo", "modelo"},
+                {"dashboard", "georrefer", "indice"},
+            };
+            const std::vector<std::vector<std::string>> activityGroups = {
+                {"levantamento", "coleta", "campo"},
+                {"analise", "modelagem", "multicriterio"},
+                {"oficina", "rede", "urt", "uac", "uo"},
+            };
+            const std::vector<std::vector<std::string>> resultGroups = {
+                {"resultado", "entreg", "validado"},
+                {"politica_publica", "subsidi", "impacto"},
+                {"banco_de_dados", "publicacao", "software"},
+            };
+            inv.innovationSignals = countGroups(innovationGroups, names, corpus);
+            inv.activitySignals = countGroups(activityGroups, names, corpus);
+            inv.plannedResultsSignals = countGroups(resultGroups, names, corpus);
+        } else {
+            inv.inferredStatus = ResearchStatus::Proposal;
+        }
         inv.score = computeScore(probe);
 
         entries.push_back(std::move(inv));

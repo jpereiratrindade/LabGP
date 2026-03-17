@@ -4,7 +4,7 @@ Gestao de Projetos de Pesquisa lato sensu (com ou sem software).
 
 ## Objetivo
 
-LabGP nasce como um projeto-irmao do LabGestao, com foco em ciclo de vida de projetos de pesquisa:
+LabGP foca no ciclo de vida de projetos de pesquisa:
 - Proposta, aprovacao, execucao, analise, publicacao, encerramento
 - DAI (Decision, Action, Impediment)
 - Gestao de execucao real (metodologia, plano de trabalho, cronograma, orcamento, entregas, acompanhamento)
@@ -43,6 +43,36 @@ ctest --test-dir build --output-on-failure
 - `Execucao` (metodologia, plano, cronograma, orcamento, entregas e impedimentos)
 - Formula atual: `Total = 0.30*Oper + 0.25*Matur + 0.20*Confiab + 0.25*Exec`
 - `Confiab` pode ser `N/A` para projetos nao intensivos em software (sem penalizacao indevida)
+
+## Personas de gestao
+
+LabGP agora trabalha com duas perspectivas complementares:
+
+- `Institucional`: compliance, governanca, rastreabilidade, controle fisico-financeiro e risco.
+- `Pesquisador`: planejamento cientifico, execucao da equipe, validacao e resultados previstos.
+
+### Scores por persona
+
+- `Score Institucional` (0-100): mede robustez de governanca e controle.
+- `Score Pesquisador` (0-100): mede capacidade de execucao cientifica e de equipe.
+- `Score Total` (0-100): mantem o consolidado tecnico-operacional para comparacao historica.
+
+Na GUI:
+- A aba `Projetos` e a aba `Kanban` permitem trocar a visao de score (`Consolidado`, `Institucional`, `Pesquisador`).
+- A aba `Inventario` mostra os tres scores e os novos sinais de pesquisa (`Inov`, `Ativ`, `ResPrev`).
+- A aba `Grafo` plota projetos por `Institucional x Pesquisador`, com cor por qualidade e tamanho por execucao.
+
+## Parametrizacao das visoes
+
+As regras de parametrizacao de:
+- `Lista de Projetos`
+- `Kanban`
+- `Inventario`
+- `Grafo`
+
+estao documentadas em:
+
+- `docs/architecture/UI_PARAMETERIZATION.md`
 
 ## Estrutura
 

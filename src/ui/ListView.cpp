@@ -34,12 +34,14 @@ std::string ListView::render(const std::vector<domain::ResearchProject>& project
         << std::setw(14) << "Status"
         << std::setw(8) << "Tipo"
         << std::setw(8) << "Total"
+        << std::setw(8) << "Inst"
+        << std::setw(8) << "Pesq"
         << std::setw(8) << "Oper"
         << std::setw(8) << "Matur"
         << std::setw(8) << "Exec"
         << std::setw(8) << "Conf"
         << "\n";
-    out << std::string(104, '-') << "\n";
+    out << std::string(120, '-') << "\n";
 
     for (const auto& row : rows) {
         const auto& project = *row.first;
@@ -49,6 +51,8 @@ std::string ListView::render(const std::vector<domain::ResearchProject>& project
             << std::setw(14) << domain::toString(project.status)
             << std::setw(8) << (project.softwareIntensive ? "SW" : "Pesq")
             << std::setw(8) << score.total
+            << std::setw(8) << score.institutional
+            << std::setw(8) << score.researcher
             << std::setw(8) << score.operational
             << std::setw(8) << score.maturity
             << std::setw(8) << score.execution

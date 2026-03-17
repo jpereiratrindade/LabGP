@@ -277,20 +277,20 @@ AppData buildAppData(const std::string& workspaceRoot, bool includeDemoProjects)
             .thematicAxis = "Integracao",
             .projectType = "Diagnostico",
             .line = "Inventario Workspace",
-            .status = entry.score.total >= 70 ? ResearchStatus::Approved : ResearchStatus::Proposal,
+            .status = entry.inferredStatus,
             .openImpediments = entry.score.total >= 60 ? 0 : 1,
             .softwareIntensive = entry.score.reliabilityApplicable,
-            .hasMethodology = entry.score.maturity >= 25,
-            .hasWorkPlan = entry.score.maturity >= 75,
-            .hasTimeline = entry.score.maturity >= 50,
-            .hasBudgetPlan = entry.score.maturity >= 100,
+            .hasMethodology = (entry.score.maturity >= 25) || (entry.activitySignals > 0),
+            .hasWorkPlan = (entry.score.maturity >= 75) || (entry.activitySignals > 1),
+            .hasTimeline = (entry.score.maturity >= 50) || (entry.activitySignals > 0),
+            .hasBudgetPlan = (entry.score.maturity >= 100),
             .plannedDeliverables = 4,
-            .deliveredDeliverables = std::min(4, entry.score.total / 25),
+            .deliveredDeliverables = std::min(4, std::max(entry.plannedResultsSignals, entry.score.total / 25)),
             .reviewMeetings = entry.score.maturity >= 50 ? 1 : 0,
-            .hasTerritorialNetwork = false,
+            .hasTerritorialNetwork = entry.activitySignals > 1,
             .hasDataGovernance = entry.score.maturity >= 100,
-            .hasValidationPlan = entry.score.maturity >= 50,
-            .hasPublicPolicyAlignment = false,
+            .hasValidationPlan = (entry.score.maturity >= 50) || (entry.plannedResultsSignals > 0),
+            .hasPublicPolicyAlignment = entry.innovationSignals > 0,
             .hasReadme = entry.score.operational >= 35,
             .hasCi = entry.score.operational >= 70,
             .hasTests = entry.score.operational >= 100,
@@ -314,7 +314,7 @@ AppData buildAppData(const std::string& workspaceRoot, bool includeDemoProjects)
 int runConsole(const AppData& data) {
     const ui::AppUI appUi(data.store);
     std::cout << "Workspace: " << data.workspaceRoot << "\n";
-    std::cout << "Repositorios Git detectados: " << data.inventory.size() << "\n";
+    std::cout << "Repositorios/projetos detectados: " << data.inventory.size() << "\n";
     std::cout << "Projetos em tela (demo + inventario): " << data.store.all().size() << "\n\n";
     std::cout << appUi.render();
     return 0;

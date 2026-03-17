@@ -54,6 +54,8 @@ int main() {
     require(score.maturity == 75, "score maturidade esperado");
     require(score.reliability == 42, "score confiabilidade esperado");
     require(score.execution == 57, "score execucao esperado");
+    require(score.institutional == 81, "score institucional esperado");
+    require(score.researcher == 57, "score pesquisador esperado");
     require(score.total == 62, "score total esperado");
 
     std::cout << "OK\n";

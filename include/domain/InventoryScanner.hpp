@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+#include "domain/ResearchProject.hpp"
 #include "domain/Scoring.hpp"
 
 namespace labgp::domain {
@@ -10,7 +11,11 @@ namespace labgp::domain {
 struct InventoryEntry {
     std::string repoName;
     std::string repoPath;
-    bool integrated{false};
+    std::string source{"Git"}; // Git | Dossie
+    int innovationSignals{0};
+    int activitySignals{0};
+    int plannedResultsSignals{0};
+    ResearchStatus inferredStatus{ResearchStatus::Proposal};
     ScoreBreakdown score;
 };
 

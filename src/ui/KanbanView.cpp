@@ -32,6 +32,8 @@ std::string KanbanView::render(const std::vector<domain::ResearchProject>& proje
             out << " - " << project.id << " | " << project.title
                 << " | Tipo: " << (project.softwareIntensive ? "Software" : "Pesquisa")
                 << " | Total: " << score.total
+                << " | Inst: " << score.institutional
+                << " | Pesq: " << score.researcher
                 << " | Exec: " << score.execution << "\n";
             ++count;
         }
