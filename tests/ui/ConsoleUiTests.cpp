@@ -17,6 +17,16 @@ void require(bool cond, const char* message) {
 int main() {
     using namespace labgp::domain;
 
+    {
+        ResearchProjectStore emptyStore;
+        const labgp::ui::AppUI emptyUi(emptyStore);
+        const std::string emptyOutput = emptyUi.render();
+        require(emptyOutput.find("(nenhum projeto cadastrado)") != std::string::npos,
+                "deve orientar quando nao houver projeto cadastrado");
+        require(emptyOutput.find("inventario de fontes") != std::string::npos,
+                "deve explicar que o workspace pode ser usado como inventario de fontes");
+    }
+
     ResearchProjectStore store;
     store.add(ResearchProject{
         .id = "LGP-T1",

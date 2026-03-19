@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -27,13 +28,19 @@ namespace labgp::app {
 namespace {
 
 constexpr const char* kDefaultWorkspaceRoot = "/run/media/jpereiratrindade/labeco10T/dev/cpp";
+constexpr const char* kProjectsFileName = "labgp_projects.tsv";
 
 struct AppData {
-    std::string workspaceRoot;
+    std::string workspaceRoot{};
     bool includeDemoProjects{false};
-    domain::ResearchProjectStore store;
-    std::vector<domain::InventoryEntry> inventory;
+    domain::ResearchProjectStore store{};
+    std::vector<domain::InventoryEntry> inventory{};
 };
+
+bool loadProjectsFromDisk(AppData* data, std::string* workspaceFeedback);
+bool saveProjectsToDisk(const AppData& data, std::string* workspaceFeedback);
+int applyInventoryMetadataToExistingProjects(AppData* data);
+bool processInnovationMiningForSource(AppData* data, const std::string& sourceRepoPath, std::string* workspaceFeedback);
 
 bool hasArg(int argc, char** argv, const char* option) {
     for (int i = 1; i < argc; ++i) {
@@ -148,7 +155,9 @@ std::string resolveWorkspaceRoot(int argc, char** argv) {
 AppData buildAppData(const std::string& workspaceRoot, bool includeDemoProjects) {
     using namespace labgp::domain;
 
-    AppData data{.workspaceRoot = workspaceRoot, .includeDemoProjects = includeDemoProjects};
+    AppData data{};
+    data.workspaceRoot = workspaceRoot;
+    data.includeDemoProjects = includeDemoProjects;
     if (includeDemoProjects) {
         data.store.add(ResearchProject{
         .id = "LGP-001",
@@ -264,72 +273,449 @@ AppData buildAppData(const std::string& workspaceRoot, bool includeDemoProjects)
     }
 
     domain::InventoryScanner scanner;
-    data.inventory = scanner.scan(workspaceRoot);
-
-    for (size_t i = 0; i < data.inventory.size() && i < 6; ++i) {
-        const auto& entry = data.inventory[i];
-        const bool hasSummary = !entry.summary.empty();
-        const bool hasObjectives = !entry.objectives.empty();
-        const bool hasActivities = !entry.researchActivities.empty();
-        const bool hasExpected = !entry.expectedResults.empty();
-        const bool hasInnovation = !entry.innovationContributions.empty();
-        const bool hasTeam = !entry.teamMembers.empty();
-        const int plannedDeliverables = std::clamp(2 + entry.activitySignals + entry.plannedResultsSignals, 2, 8);
-        int deliveredDeliverables = std::clamp(entry.plannedResultsSignals, 0, plannedDeliverables);
-        if (entry.inferredStatus != domain::ResearchStatus::Proposal &&
-            entry.inferredStatus != domain::ResearchStatus::InReview) {
-            deliveredDeliverables = std::max(deliveredDeliverables, 1);
-        }
-        const int reviewMeetings = std::max(0, entry.activitySignals - 1);
-
-        data.store.add(ResearchProject{
-            .id = "INV-" + std::to_string(i + 1),
-            .title = "Integracao: " + entry.repoName,
-            .coordinator = "Auto Scanner",
-            .institution = "Workspace",
-            .program = "Inventario Tecnico",
-            .thematicAxis = "Integracao",
-            .projectType = "Diagnostico",
-            .line = "Inventario Workspace",
-            .status = entry.inferredStatus,
-            .openImpediments = entry.score.total >= 60 ? 0 : 1,
-            .softwareIntensive = entry.score.reliabilityApplicable,
-            .hasMethodology = hasActivities || hasObjectives,
-            .hasWorkPlan = hasActivities || (entry.activitySignals > 0),
-            .hasTimeline = entry.activitySignals > 0 || hasActivities,
-            .hasBudgetPlan = entry.curatedSuporteAdmin > 0 || entry.inferredStatus == domain::ResearchStatus::Approved,
-            .plannedDeliverables = plannedDeliverables,
-            .deliveredDeliverables = deliveredDeliverables,
-            .reviewMeetings = reviewMeetings,
-            .hasTerritorialNetwork = entry.activitySignals > 1 || hasTeam,
-            .hasDataGovernance = hasSummary && (entry.curatedSuporteAdmin > 0 || entry.activitySignals > 0),
-            .hasValidationPlan = hasExpected || (entry.plannedResultsSignals > 0),
-            .hasPublicPolicyAlignment = hasInnovation || (entry.innovationSignals > 0),
-            .hasReadme = hasSummary || hasObjectives,
-            .hasCi = false,
-            .hasTests = false,
-            .hasAdr = entry.score.maturity >= 25,
-            .hasDdd = entry.score.maturity >= 50,
-            .hasDai = entry.score.maturity >= 75,
-            .governanceItems = entry.score.maturity >= 100 ? 1 : 0,
-            .hasAsanUbsan = entry.score.reliability > 0,
-            .hasLeakChecks = entry.score.reliability > 14,
-            .hasStaticAnalysis = entry.score.reliability > 28,
-            .hasStrictWarnings = entry.score.reliability > 42,
-            .hasComplexityGuard = entry.score.reliability > 57,
-            .hasCycleGuard = entry.score.reliability > 71,
-            .hasFormatLint = entry.score.reliability > 85,
-        });
-    }
+    data.inventory = scanner.scan(workspaceRoot, false);
+    loadProjectsFromDisk(&data, nullptr);
+    applyInventoryMetadataToExistingProjects(&data);
 
     return data;
+}
+
+std::string escapeTsv(const std::string& raw) {
+    std::string out;
+    out.reserve(raw.size());
+    for (char c : raw) {
+        switch (c) {
+            case '\\': out += "\\\\"; break;
+            case '\t': out += "\\t"; break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            default: out.push_back(c); break;
+        }
+    }
+    return out;
+}
+
+std::string unescapeTsv(const std::string& escaped) {
+    std::string out;
+    out.reserve(escaped.size());
+    for (std::size_t i = 0; i < escaped.size(); ++i) {
+        const char c = escaped[i];
+        if (c == '\\' && i + 1 < escaped.size()) {
+            const char n = escaped[i + 1];
+            switch (n) {
+                case '\\': out.push_back('\\'); ++i; continue;
+                case 't': out.push_back('\t'); ++i; continue;
+                case 'n': out.push_back('\n'); ++i; continue;
+                case 'r': out.push_back('\r'); ++i; continue;
+                default: break;
+            }
+        }
+        out.push_back(c);
+    }
+    return out;
+}
+
+std::vector<std::string> splitTabLine(const std::string& line) {
+    std::vector<std::string> cols;
+    std::string current;
+    for (char c : line) {
+        if (c == '\t') {
+            cols.push_back(current);
+            current.clear();
+        } else {
+            current.push_back(c);
+        }
+    }
+    cols.push_back(current);
+    return cols;
+}
+
+int parseIntField(const std::vector<std::string>& cols, std::size_t idx, int fallback = 0) {
+    if (idx >= cols.size()) return fallback;
+    try {
+        return std::stoi(cols[idx]);
+    } catch (...) {
+        return fallback;
+    }
+}
+
+bool parseBoolField(const std::vector<std::string>& cols, std::size_t idx, bool fallback = false) {
+    return parseIntField(cols, idx, fallback ? 1 : 0) != 0;
+}
+
+domain::ResearchStatus statusFromPersistedInt(int value) {
+    switch (value) {
+        case 0: return domain::ResearchStatus::Proposal;
+        case 1: return domain::ResearchStatus::InReview;
+        case 2: return domain::ResearchStatus::Approved;
+        case 3: return domain::ResearchStatus::Execution;
+        case 4: return domain::ResearchStatus::Analysis;
+        case 5: return domain::ResearchStatus::Publication;
+        case 6: return domain::ResearchStatus::Closed;
+        default: return domain::ResearchStatus::Proposal;
+    }
+}
+
+int statusToPersistedInt(domain::ResearchStatus status) {
+    switch (status) {
+        case domain::ResearchStatus::Proposal: return 0;
+        case domain::ResearchStatus::InReview: return 1;
+        case domain::ResearchStatus::Approved: return 2;
+        case domain::ResearchStatus::Execution: return 3;
+        case domain::ResearchStatus::Analysis: return 4;
+        case domain::ResearchStatus::Publication: return 5;
+        case domain::ResearchStatus::Closed: return 6;
+    }
+    return 0;
+}
+
+void upsertProject(domain::ResearchProjectStore* store, const domain::ResearchProject& project) {
+    if (!store) return;
+    if (!store->update(project)) {
+        store->add(project);
+    }
+}
+
+bool loadProjectsFromDisk(AppData* data, std::string* workspaceFeedback) {
+    namespace fs = std::filesystem;
+    if (!data) return false;
+    const fs::path inPath = fs::path(data->workspaceRoot) / kProjectsFileName;
+    if (!fs::exists(inPath)) {
+        return false;
+    }
+
+    std::ifstream in(inPath);
+    if (!in.is_open()) {
+        if (workspaceFeedback) {
+            *workspaceFeedback = "Falha ao carregar projetos salvos: arquivo inacessivel.";
+        }
+        return false;
+    }
+
+    std::string header;
+    std::getline(in, header);
+
+    int loaded = 0;
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.empty()) continue;
+        const auto cols = splitTabLine(line);
+        if (cols.size() < 41) continue;
+
+        domain::ResearchProject p;
+        p.id = unescapeTsv(cols[0]);
+        p.title = unescapeTsv(cols[1]);
+        p.sourceRepoPath = unescapeTsv(cols[2]);
+        p.coordinator = unescapeTsv(cols[3]);
+        p.institution = unescapeTsv(cols[4]);
+        p.program = unescapeTsv(cols[5]);
+        p.thematicAxis = unescapeTsv(cols[6]);
+        p.callNotice = unescapeTsv(cols[7]);
+        p.projectType = unescapeTsv(cols[8]);
+        p.startDate = unescapeTsv(cols[9]);
+        p.endDate = unescapeTsv(cols[10]);
+        p.durationMonths = parseIntField(cols, 11);
+        p.line = unescapeTsv(cols[12]);
+        p.status = statusFromPersistedInt(parseIntField(cols, 13));
+        p.openImpediments = parseIntField(cols, 14);
+        p.softwareIntensive = parseBoolField(cols, 15);
+        p.hasMethodology = parseBoolField(cols, 16);
+        p.hasWorkPlan = parseBoolField(cols, 17);
+        p.hasTimeline = parseBoolField(cols, 18);
+        p.hasBudgetPlan = parseBoolField(cols, 19);
+        p.plannedDeliverables = parseIntField(cols, 20);
+        p.deliveredDeliverables = parseIntField(cols, 21);
+        p.reviewMeetings = parseIntField(cols, 22);
+        p.hasTerritorialNetwork = parseBoolField(cols, 23);
+        p.hasDataGovernance = parseBoolField(cols, 24);
+        p.hasValidationPlan = parseBoolField(cols, 25);
+        p.hasPublicPolicyAlignment = parseBoolField(cols, 26);
+        p.hasReadme = parseBoolField(cols, 27);
+        p.hasCi = parseBoolField(cols, 28);
+        p.hasTests = parseBoolField(cols, 29);
+        p.hasAdr = parseBoolField(cols, 30);
+        p.hasDdd = parseBoolField(cols, 31);
+        p.hasDai = parseBoolField(cols, 32);
+        p.governanceItems = parseIntField(cols, 33);
+        p.hasAsanUbsan = parseBoolField(cols, 34);
+        p.hasLeakChecks = parseBoolField(cols, 35);
+        p.hasStaticAnalysis = parseBoolField(cols, 36);
+        p.hasStrictWarnings = parseBoolField(cols, 37);
+        p.hasComplexityGuard = parseBoolField(cols, 38);
+        p.hasCycleGuard = parseBoolField(cols, 39);
+        p.hasFormatLint = parseBoolField(cols, 40);
+
+        if (p.id.empty() || p.title.empty()) continue;
+        upsertProject(&data->store, p);
+        ++loaded;
+    }
+
+    if (workspaceFeedback) {
+        *workspaceFeedback = "Projetos carregados de: " + inPath.string() + " (" + std::to_string(loaded) + ")";
+    }
+    return loaded > 0;
+}
+
+bool saveProjectsToDisk(const AppData& data, std::string* workspaceFeedback) {
+    namespace fs = std::filesystem;
+    const fs::path outPath = fs::path(data.workspaceRoot) / kProjectsFileName;
+    std::ofstream out(outPath);
+    if (!out.is_open()) {
+        if (workspaceFeedback) {
+            *workspaceFeedback = "Falha ao salvar projetos: nao foi possivel abrir arquivo de saida.";
+        }
+        return false;
+    }
+
+    out << "id\ttitle\tsource_repo_path\tcoordinator\tinstitution\tprogram\tthematic_axis\tcall_notice\tproject_type\tstart_date\tend_date\tduration_months\tline\tstatus\topen_impediments\tsoftware_intensive\thas_methodology\thas_work_plan\thas_timeline\thas_budget_plan\tplanned_deliverables\tdelivered_deliverables\treview_meetings\thas_territorial_network\thas_data_governance\thas_validation_plan\thas_public_policy_alignment\thas_readme\thas_ci\thas_tests\thas_adr\thas_ddd\thas_dai\tgovernance_items\thas_asan_ubsan\thas_leak_checks\thas_static_analysis\thas_strict_warnings\thas_complexity_guard\thas_cycle_guard\thas_format_lint\n";
+
+    for (const auto& p : data.store.all()) {
+        out << escapeTsv(p.id) << '\t'
+            << escapeTsv(p.title) << '\t'
+            << escapeTsv(p.sourceRepoPath) << '\t'
+            << escapeTsv(p.coordinator) << '\t'
+            << escapeTsv(p.institution) << '\t'
+            << escapeTsv(p.program) << '\t'
+            << escapeTsv(p.thematicAxis) << '\t'
+            << escapeTsv(p.callNotice) << '\t'
+            << escapeTsv(p.projectType) << '\t'
+            << escapeTsv(p.startDate) << '\t'
+            << escapeTsv(p.endDate) << '\t'
+            << p.durationMonths << '\t'
+            << escapeTsv(p.line) << '\t'
+            << statusToPersistedInt(p.status) << '\t'
+            << p.openImpediments << '\t'
+            << (p.softwareIntensive ? 1 : 0) << '\t'
+            << (p.hasMethodology ? 1 : 0) << '\t'
+            << (p.hasWorkPlan ? 1 : 0) << '\t'
+            << (p.hasTimeline ? 1 : 0) << '\t'
+            << (p.hasBudgetPlan ? 1 : 0) << '\t'
+            << p.plannedDeliverables << '\t'
+            << p.deliveredDeliverables << '\t'
+            << p.reviewMeetings << '\t'
+            << (p.hasTerritorialNetwork ? 1 : 0) << '\t'
+            << (p.hasDataGovernance ? 1 : 0) << '\t'
+            << (p.hasValidationPlan ? 1 : 0) << '\t'
+            << (p.hasPublicPolicyAlignment ? 1 : 0) << '\t'
+            << (p.hasReadme ? 1 : 0) << '\t'
+            << (p.hasCi ? 1 : 0) << '\t'
+            << (p.hasTests ? 1 : 0) << '\t'
+            << (p.hasAdr ? 1 : 0) << '\t'
+            << (p.hasDdd ? 1 : 0) << '\t'
+            << (p.hasDai ? 1 : 0) << '\t'
+            << p.governanceItems << '\t'
+            << (p.hasAsanUbsan ? 1 : 0) << '\t'
+            << (p.hasLeakChecks ? 1 : 0) << '\t'
+            << (p.hasStaticAnalysis ? 1 : 0) << '\t'
+            << (p.hasStrictWarnings ? 1 : 0) << '\t'
+            << (p.hasComplexityGuard ? 1 : 0) << '\t'
+            << (p.hasCycleGuard ? 1 : 0) << '\t'
+            << (p.hasFormatLint ? 1 : 0) << '\n';
+    }
+
+    if (workspaceFeedback) {
+        *workspaceFeedback = "Projetos salvos em: " + outPath.string();
+    }
+    return true;
+}
+
+bool createProjectFromInventorySource(
+    AppData* data,
+    const ui::CreateProjectRequest& request,
+    std::string* workspaceFeedback
+) {
+    if (!data) return false;
+    const auto it = std::find_if(data->inventory.begin(), data->inventory.end(), [&](const domain::InventoryEntry& entry) {
+        return entry.repoPath == request.sourceRepoPath;
+    });
+    if (it == data->inventory.end()) {
+        if (workspaceFeedback) *workspaceFeedback = "Fonte selecionada nao encontrada no inventario atual.";
+        return false;
+    }
+    if (request.projectId.empty() || request.projectTitle.empty()) {
+        if (workspaceFeedback) *workspaceFeedback = "Projeto nao criado: ID e titulo sao obrigatorios.";
+        return false;
+    }
+
+    domain::ResearchProject project = it->projectSnapshot;
+    project.id = request.projectId;
+    project.title = request.projectTitle;
+    project.sourceRepoPath = it->repoPath;
+    project.coordinator = request.coordinator.empty() ? "Coordenacao a definir" : request.coordinator;
+    project.institution = request.institution.empty() ? "Nao informado" : request.institution;
+    project.program = "Curadoria Manual";
+    project.thematicAxis = "Projeto de Pesquisa";
+    if (project.projectType.empty()) {
+        project.projectType = project.softwareIntensive ? "PD&I Software" : "PD&I";
+    }
+    project.line = it->repoName;
+    project.status = it->inferredStatus;
+    data->store.add(std::move(project));
+    if (workspaceFeedback) *workspaceFeedback = "Projeto criado manualmente a partir da fonte selecionada.";
+    return true;
+}
+
+std::string joinWithPipe(const std::vector<std::string>& values) {
+    std::string out;
+    for (const auto& v : values) {
+        if (v.empty()) continue;
+        if (!out.empty()) out += '|';
+        out += v;
+    }
+    return out;
+}
+
+bool updateProjectInStore(
+    AppData* data,
+    const ui::UpdateProjectRequest& request,
+    std::string* workspaceFeedback
+) {
+    if (!data) return false;
+    if (request.project.id.empty()) {
+        if (workspaceFeedback) *workspaceFeedback = "Projeto nao atualizado: ID invalido.";
+        return false;
+    }
+    if (request.project.title.empty()) {
+        if (workspaceFeedback) *workspaceFeedback = "Projeto nao atualizado: titulo obrigatorio.";
+        return false;
+    }
+    if (!data->store.update(request.project)) {
+        if (workspaceFeedback) *workspaceFeedback = "Projeto nao encontrado para atualizacao.";
+        return false;
+    }
+    if (workspaceFeedback) *workspaceFeedback = "Projeto atualizado com sucesso.";
+    return true;
+}
+
+bool processInnovationMiningForSource(
+    AppData* data,
+    const std::string& sourceRepoPath,
+    std::string* workspaceFeedback
+) {
+    if (!data || sourceRepoPath.empty()) return false;
+
+    domain::InventoryScanner scanner;
+    const auto rescanned = scanner.scan(sourceRepoPath, true);
+    const domain::InventoryEntry* enriched = nullptr;
+    for (const auto& item : rescanned) {
+        if (item.repoPath == sourceRepoPath) {
+            enriched = &item;
+            break;
+        }
+    }
+    if (!enriched) {
+        if (workspaceFeedback) *workspaceFeedback = "Nao foi possivel processar contribuicoes/atividades para esta fonte.";
+        return false;
+    }
+
+    for (auto& item : data->inventory) {
+        if (item.repoPath != sourceRepoPath) continue;
+        item.innovationContributions = enriched->innovationContributions;
+        item.researchActivities = enriched->researchActivities;
+        item.innovationSolutionName = enriched->innovationSolutionName;
+        item.innovationSolutionDescription = enriched->innovationSolutionDescription;
+        item.innovationSolutionResponsible = enriched->innovationSolutionResponsible;
+        item.innovationSolutionStartDate = enriched->innovationSolutionStartDate;
+        item.innovationSolutionDurationMonths = enriched->innovationSolutionDurationMonths;
+        item.innovationSolutionEndDate = enriched->innovationSolutionEndDate;
+        if (workspaceFeedback) {
+            *workspaceFeedback = "Varredura de inovacao/atividades concluida para a fonte selecionada.";
+        }
+        return true;
+    }
+
+    if (workspaceFeedback) *workspaceFeedback = "Fonte selecionada nao encontrada no inventario atual.";
+    return false;
+}
+
+int applyInventoryMetadataToExistingProjects(AppData* data) {
+    if (!data) return 0;
+    int updated = 0;
+    for (const auto& inv : data->inventory) {
+        if (inv.repoPath.empty()) continue;
+        for (const auto& existing : data->store.all()) {
+            if (existing.sourceRepoPath != inv.repoPath) continue;
+            domain::ResearchProject merged = existing;
+            if (!inv.projectSnapshot.title.empty()) merged.title = inv.projectSnapshot.title;
+            if (!inv.projectSnapshot.coordinator.empty()) merged.coordinator = inv.projectSnapshot.coordinator;
+            if (!inv.projectSnapshot.institution.empty()) merged.institution = inv.projectSnapshot.institution;
+            if (!inv.projectSnapshot.callNotice.empty()) merged.callNotice = inv.projectSnapshot.callNotice;
+            if (!inv.projectSnapshot.projectType.empty()) merged.projectType = inv.projectSnapshot.projectType;
+            if (!inv.projectSnapshot.startDate.empty()) merged.startDate = inv.projectSnapshot.startDate;
+            if (!inv.projectSnapshot.endDate.empty()) merged.endDate = inv.projectSnapshot.endDate;
+            if (inv.projectSnapshot.durationMonths > 0) merged.durationMonths = inv.projectSnapshot.durationMonths;
+            if (data->store.update(merged)) {
+                ++updated;
+            }
+        }
+    }
+    return updated;
+}
+
+bool exportInventoryTsv(const AppData& data, std::string* workspaceFeedback) {
+    namespace fs = std::filesystem;
+    const fs::path outPath = fs::path(data.workspaceRoot) / "labgp_inventory_export.tsv";
+    std::ofstream out(outPath);
+    if (!out.is_open()) {
+        if (workspaceFeedback) *workspaceFeedback = "Falha ao exportar inventario: nao foi possivel abrir arquivo de saida.";
+        return false;
+    }
+
+    out << "repo_name\trepo_path\tsource\ttitle\tcoordinator\tinstitution\tleader_role\tsubmission_state\tsubmission_print_date\tcode_seg\tlinked_contract\tcall_notice\tproject_type\tstart_date\tduration_months\tend_date\tinnovation_solution_name\tinnovation_solution_description\tinnovation_solution_responsible\tinnovation_solution_start_date\tinnovation_solution_duration_months\tinnovation_solution_end_date\tteam_members_count\tteam_members\tfinancial_institutions_count\tfinancial_institutions\tpartner_institutions_count\tpartner_institutions\tsupport_foundations_count\tsupport_foundations\ttotal\tinstitutional\tresearcher\toperational\tmaturity\treliability\tinnovation\tactivity\tplanned_results\tcurated\tstatus_suggested\n";
+    for (const auto& it : data.inventory) {
+        out << it.repoName << '\t'
+            << it.repoPath << '\t'
+            << it.source << '\t'
+            << it.projectSnapshot.title << '\t'
+            << it.projectSnapshot.coordinator << '\t'
+            << it.projectSnapshot.institution << '\t'
+            << it.leaderRole << '\t'
+            << it.submissionState << '\t'
+            << it.submissionPrintDate << '\t'
+            << it.codeSeg << '\t'
+            << it.linkedContract << '\t'
+            << it.projectSnapshot.callNotice << '\t'
+            << it.projectSnapshot.projectType << '\t'
+            << it.projectSnapshot.startDate << '\t'
+            << it.projectSnapshot.durationMonths << '\t'
+            << it.projectSnapshot.endDate << '\t'
+            << escapeTsv(it.innovationSolutionName) << '\t'
+            << escapeTsv(it.innovationSolutionDescription) << '\t'
+            << escapeTsv(it.innovationSolutionResponsible) << '\t'
+            << it.innovationSolutionStartDate << '\t'
+            << it.innovationSolutionDurationMonths << '\t'
+            << it.innovationSolutionEndDate << '\t'
+            << static_cast<int>(it.teamMembers.size()) << '\t'
+            << joinWithPipe(it.teamMembers) << '\t'
+            << static_cast<int>(it.financialInstitutions.size()) << '\t'
+            << joinWithPipe(it.financialInstitutions) << '\t'
+            << static_cast<int>(it.partnerInstitutions.size()) << '\t'
+            << joinWithPipe(it.partnerInstitutions) << '\t'
+            << static_cast<int>(it.supportFoundations.size()) << '\t'
+            << joinWithPipe(it.supportFoundations) << '\t'
+            << it.score.total << '\t'
+            << it.score.institutional << '\t'
+            << it.score.researcher << '\t'
+            << it.score.operational << '\t'
+            << it.score.maturity << '\t'
+            << it.score.reliability << '\t'
+            << it.innovationSignals << '\t'
+            << it.activitySignals << '\t'
+            << it.plannedResultsSignals << '\t'
+            << it.interpretedDocsIncluded << "/" << it.interpretedDocsTotal << '\t'
+            << domain::toString(it.inferredStatus) << '\n';
+    }
+    if (workspaceFeedback) {
+        *workspaceFeedback = "Inventario exportado para: " + outPath.string();
+    }
+    return true;
 }
 
 int runConsole(const AppData& data) {
     const ui::AppUI appUi(data.store);
     std::cout << "Workspace: " << data.workspaceRoot << "\n";
-    std::cout << "Repositorios/projetos detectados: " << data.inventory.size() << "\n";
-    std::cout << "Projetos em tela (demo + inventario): " << data.store.all().size() << "\n\n";
+    std::cout << "Fontes detectadas no inventario: " << data.inventory.size() << "\n";
+    std::cout << "Projetos cadastrados em tela: " << data.store.all().size() << "\n\n";
     std::cout << appUi.render();
     return 0;
 }
@@ -378,7 +764,13 @@ bool runGui(AppData* data) {
     bool done = false;
     while (!done) {
         bool requestRescan = false;
+        bool requestExportInventory = false;
+        bool requestSaveProjects = false;
+        bool requestExit = false;
         std::string requestApplyWorkspacePath;
+        std::string requestProcessInnovationSourceRepoPath;
+        ui::CreateProjectRequest requestCreateProject;
+        ui::UpdateProjectRequest requestUpdateProject;
         SDL_Event event;
         while (SDL_PollEvent(&event) != 0) {
             ImGui_ImplSDL2_ProcessEvent(&event);
@@ -397,13 +789,19 @@ bool runGui(AppData* data) {
             data->inventory,
             data->workspaceRoot,
             &requestRescan,
+            &requestExportInventory,
+            &requestSaveProjects,
+            &requestExit,
             &requestApplyWorkspacePath,
+            &requestProcessInnovationSourceRepoPath,
+            &requestCreateProject,
+            &requestUpdateProject,
             workspaceFeedback
         );
 
         if (requestRescan) {
             *data = buildAppData(data->workspaceRoot, data->includeDemoProjects);
-            workspaceFeedback = "Inventario reescanado com sucesso.";
+            workspaceFeedback = "Inventario reescanado (modo leve). Use o botao de processamento para inovacao/atividades por fonte.";
         }
 
         if (!requestApplyWorkspacePath.empty()) {
@@ -413,6 +811,25 @@ bool runGui(AppData* data) {
             } else {
                 workspaceFeedback = "Pasta invalida. Verifique o caminho informado.";
             }
+        }
+        if (!requestProcessInnovationSourceRepoPath.empty()) {
+            processInnovationMiningForSource(data, requestProcessInnovationSourceRepoPath, &workspaceFeedback);
+        }
+
+        if (!requestCreateProject.sourceRepoPath.empty()) {
+            createProjectFromInventorySource(data, requestCreateProject, &workspaceFeedback);
+        }
+        if (!requestUpdateProject.project.id.empty()) {
+            updateProjectInStore(data, requestUpdateProject, &workspaceFeedback);
+        }
+        if (requestExportInventory) {
+            exportInventoryTsv(*data, &workspaceFeedback);
+        }
+        if (requestSaveProjects) {
+            saveProjectsToDisk(*data, &workspaceFeedback);
+        }
+        if (requestExit) {
+            done = true;
         }
 
         ImGui::Render();

@@ -24,12 +24,27 @@ struct InventoryEntry {
     std::string repoName;
     std::string repoPath;
     std::string source{"Git"}; // Git | Dossie
+    ResearchProject projectSnapshot;
     std::string summary;
     std::string objectives;
     std::string innovationContributions;
     std::string researchActivities;
     std::string expectedResults;
     std::vector<std::string> teamMembers;
+    std::vector<std::string> financialInstitutions;
+    std::vector<std::string> partnerInstitutions;
+    std::vector<std::string> supportFoundations;
+    std::string innovationSolutionName;
+    std::string innovationSolutionDescription;
+    std::string innovationSolutionResponsible;
+    std::string innovationSolutionStartDate;
+    int innovationSolutionDurationMonths{0};
+    std::string innovationSolutionEndDate;
+    std::string submissionState;
+    std::string submissionPrintDate;
+    std::string leaderRole;
+    std::string codeSeg;
+    std::string linkedContract;
     std::vector<InterpretedDocument> interpretedDocuments;
     int interpretedDocsTotal{0};
     int interpretedDocsIncluded{0};
@@ -46,7 +61,7 @@ struct InventoryEntry {
 
 class InventoryScanner {
 public:
-    std::vector<InventoryEntry> scan(const std::string& workspaceRoot) const;
+    std::vector<InventoryEntry> scan(const std::string& workspaceRoot, bool includeInnovationMining = false) const;
 };
 
 } // namespace labgp::domain

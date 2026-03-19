@@ -39,13 +39,14 @@ As duas visoes coexistem e reduzem vies de avaliacao unicamente administrativa o
 
 ## Indicadores de inventario
 
-O inventario agrega sinais detectaveis automaticamente:
+O inventario agrega sinais e metadados de Identificacao Embrapa apos o reescan automatico:
 
 - `Inov` (`innovationSignals`): contribuicoes para inovacao
 - `Ativ` (`activitySignals`): atividades de pesquisa em andamento
 - `ResPrev` (`plannedResultsSignals`): indicios de resultados previstos/esperados
 - `Origem`: `Git` ou `Dossie`
-- `Status inferido`: proposta, em avaliacao, aprovado, execucao, analise, publicacao, encerrado
+- `Status sugerido`: proposta, em avaliacao, aprovado, execucao, analise, publicacao, encerrado
+- `Identificacao Embrapa`: titulo, lider, instituicao, cargo, estado da submissao, data de impressao, codigo SEG e contrato vinculado
 
 ## Modelo de score no dominio
 
@@ -72,7 +73,7 @@ O inventario agrega sinais detectaveis automaticamente:
 
 - `Projetos`: alternancia de visao de score (`Consolidado`, `Institucional`, `Pesquisador`)
 - `Kanban`: exibe score da visao escolhida sem perder `Total`
-- `Inventario`: remove coluna `Integrado` e inclui `Origem`, `Inov`, `Ativ`, `ResPrev`, `Status`
+- `Inventario`: inclui `Origem`, `Inov`, `Ativ`, `ResPrev`, `Status sugerido` e o bloco de Identificacao Embrapa no detalhe
 - `Grafo`: posiciona projetos em `Institucional x Pesquisador` com cor por qualidade
 - Separacao explicita em todas as telas: `Fluxo` (etapa) vs `Qualidade` (score)
 

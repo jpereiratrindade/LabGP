@@ -28,7 +28,7 @@ Um projeto pode estar `Aprovado` no fluxo e ainda ter qualidade baixa.
 
 ### Fonte de dados
 - `ResearchProjectStore`.
-- Pode conter projetos cadastrados e projetos `INV-*` derivados do inventario.
+- Contem os projetos formalizados no sistema.
 
 ### Ordenacao
 - Ordena por qualidade da visao ativa (`scorePerspective`), descrescente.
@@ -55,7 +55,12 @@ Um projeto pode estar `Aprovado` no fluxo e ainda ter qualidade baixa.
 - `InventoryScanner::scan(workspaceRoot)`.
 - Entrada pode ser:
   - `Git`: pasta com `.git`.
-  - `Dossie`: pasta com PDFs (fonte principal de conteudo).
+  - `Dossie`: pasta com PDFs, usada como base da Identificacao Embrapa.
+
+### Processamento automatico
+- Ao acionar `Reescanear inventario de fontes`, os PDFs sao processados automaticamente.
+- O scanner atualiza o corpus, a curadoria e os metadados de identificacao.
+- O resultado alimenta a tabela do inventario, o detalhe lateral e a exportacao TSV.
 
 ### Regra de leitura de conteudo textual
 - Apenas PDFs sao usados para extrair texto de:
@@ -82,9 +87,23 @@ Um projeto pode estar `Aprovado` no fluxo e ainda ter qualidade baixa.
 
 ### Colunas e significado
 - `Origem`: `Git` ou `Dossie`.
-- `Fluxo (Status inferido)`: etapa inferida para item de inventario.
+- `Fluxo sugerido`: etapa sugerida para a fonte, apenas como apoio de curadoria.
 - `Total/Inst/Pesq/Oper/Matur/Conf`: qualidade.
 - `Inov`, `Ativ`, `ResPrev`: sinais de inovacao, atividades e resultados previstos.
+- `Identificacao Embrapa`: bloco expandido no topo do detalhe com:
+  - `Titulo do projeto`
+  - `Lider/Responsavel`
+  - `Instituicao do lider`
+  - `Cargo do lider`
+  - `Estado da submissao`
+  - `Data de impressao`
+  - `Codigo SEG`
+  - `Contrato vinculado`
+  - `Edital/Chamada`
+  - `Tipo de projeto`
+  - `Data de inicio`
+  - `Duracao (meses)`
+  - `Data de termino`
 
 ### Painel de detalhes (clique na linha)
 - `Resumo`
@@ -93,6 +112,11 @@ Um projeto pode estar `Aprovado` no fluxo e ainda ter qualidade baixa.
 - `Atividades de pesquisa`
 - `Resultados esperados`
 - `Equipe`
+
+### Blocos da Identificacao Embrapa
+1. `Identificacao basica`: titulo, lider/responsavel, instituicao do lider, cargo do lider e fonte associada.
+2. `Submissao e vinculo`: estado da submissao, data de impressao, codigo SEG e contrato vinculado.
+3. `Enquadramento`: edital/chamada, tipo de projeto, datas e duracao.
 
 ### Inferencia de fluxo no inventario (precedencia)
 1. Encerrado
@@ -126,9 +150,8 @@ Ver implementacao em `src/domain/Scoring.cpp`:
 - Perspectivas: `institutional`, `researcher`.
 - Consolidado: `total`.
 
-## Regra de mapeamento inventario -> projetos `INV-*`
+## Exportacao TSV
 
-No carregamento da aplicacao:
-- primeiros itens do inventario sao transformados em projetos de tela (`INV-1`, `INV-2`, ...),
-- com `status` vindo de `inferredStatus`,
-- e atributos derivados dos sinais de inventario para compor os scores.
+- A exportacao `labgp_inventory_export.tsv` e gerada na raiz do workspace.
+- Colunas principais: `repo_name`, `repo_path`, `source`, `title`, `coordinator`, `institution`, `leader_role`, `submission_state`, `submission_print_date`, `code_seg`, `linked_contract`, `call_notice`, `project_type`, `start_date`, `duration_months`, `end_date`, `team_members_count`, `team_members`, `total`, `institutional`, `researcher`, `operational`, `maturity`, `reliability`, `innovation`, `activity`, `planned_results`, `curated`, `status_suggested`.
+- O TSV replica os metadados da Identificacao Embrapa que aparecem no topo do detalhe de inventario.

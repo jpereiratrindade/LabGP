@@ -10,6 +10,7 @@ namespace labgp::domain {
 class ResearchProjectStore {
 public:
     void add(ResearchProject project);
+    bool update(const ResearchProject& project);
     bool moveStatus(const std::string& id, ResearchStatus nextStatus);
 
     const std::vector<ResearchProject>& all() const;

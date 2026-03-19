@@ -46,6 +46,17 @@ void ResearchProjectStore::add(ResearchProject project) {
     projects_.push_back(std::move(project));
 }
 
+bool ResearchProjectStore::update(const ResearchProject& project) {
+    auto it = std::find_if(projects_.begin(), projects_.end(), [&](const ResearchProject& p) {
+        return p.id == project.id;
+    });
+    if (it == projects_.end()) {
+        return false;
+    }
+    *it = project;
+    return true;
+}
+
 bool ResearchProjectStore::moveStatus(const std::string& id, ResearchStatus nextStatus) {
     auto it = std::find_if(projects_.begin(), projects_.end(), [&](const ResearchProject& p) {
         return p.id == id;

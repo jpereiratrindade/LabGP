@@ -4,15 +4,16 @@
 Aceita
 
 ## Contexto
-O inventario de projetos de pesquisa passou a depender de conteudo de dossies (PDFs).
-Sem curadoria explicita, documentos administrativos e anexos podem contaminar a inferencia
-de fluxo e a extracao de campos (resumo, objetivos, atividades, resultados).
+O LabGP passou a usar dossies PDF como fonte de Identificacao Embrapa e apoio a
+curadoria automatica no reescan. Sem curadoria explicita, documentos administrativos
+e anexos podem contaminar a leitura das fontes e a extracao de campos
+(resumo, objetivos, atividades, resultados, metadados de identificacao).
 
 Tambem havia necessidade de rastreabilidade: quais documentos foram interpretados,
 quais entraram no corpus, e sob qual criterio.
 
 ## Decisao
-Adotar curadoria automatica de PDFs no contexto `InventoryIntelligence` com:
+Adotar curadoria automatica de PDFs no contexto `InventoryIntelligence`, com:
 
 1. Classificacao por tag (`curation_tag`) no nome do arquivo:
 - `nucleo_projeto`
@@ -38,7 +39,7 @@ Adotar curadoria automatica de PDFs no contexto `InventoryIntelligence` com:
 ## Consequencias
 
 ### Positivas
-- Melhor qualidade de inferencia para projetos de pesquisa.
+- Melhor qualidade de leitura das fontes e da Identificacao Embrapa.
 - Rastreabilidade auditavel do processo de ingestao documental.
 - Menor custo de reprocessamento por reuso de cache por hash.
 
@@ -49,4 +50,4 @@ Adotar curadoria automatica de PDFs no contexto `InventoryIntelligence` com:
 ## Plano de adocao
 1. Medir taxa de acerto de `curation_tag` em amostra real.
 2. Ajustar heuristicas por dominio institucional quando necessario.
-3. Evoluir para fase 2 com curadoria semantica (conteudo), mantendo compatibilidade com `manifest.tsv`.
+3. Evoluir para fase 2 com curadoria semantica (conteudo), mantendo compatibilidade com `manifest.tsv` e com a exportacao TSV de identificacao.

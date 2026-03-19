@@ -3,6 +3,7 @@
 ## Identidade
 - `ResearchProject.id` e chave canonica do projeto.
 - `repoPath` e dado de origem, nao chave de negocio.
+- `InventoryEntry` agrega a Identificacao Embrapa e os sinais de apoio.
 
 ## Fluxo
 - Ordem canonica de etapas:
@@ -19,4 +20,5 @@
 ## Integridade
 - `deliveredDeliverables <= plannedDeliverables` no calculo de execucao.
 - `reliabilityApplicable=false` para projetos nao software-intensive.
-- Inferencia de status no inventario respeita precedencia deterministica.
+- O reescan do workspace processa PDFs automaticamente e atualiza a Identificacao Embrapa.
+- A inferencia de status no inventario respeita precedencia deterministica e serve como apoio de leitura.

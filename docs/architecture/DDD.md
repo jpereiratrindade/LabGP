@@ -1,10 +1,10 @@
 # DDD LabGP
 
 ## Contextos Delimitados
-- `PortfolioResearch`: cadastro e ciclo de vida do projeto cientifico.
+- `PortfolioResearch`: ciclo de vida do projeto cientifico.
 - `GovernanceScoring`: score consolidado e por persona.
-- `InventoryIntelligence`: leitura de repositorios/dossies e inferencia de sinais.
-- `ReportingView`: projecoes para lista, kanban, grafo e inventario.
+- `InventoryIntelligence`: leitura de repositorios/dossies, curadoria de fontes e identificacao Embrapa.
+- `ReportingView`: projecoes para lista, kanban, grafo, inventario e exportacao TSV.
 
 ## Agregados e Entidades
 - Agregado raiz: `ResearchProject` (estado de fluxo e dados de execucao).
@@ -22,6 +22,8 @@
   - consolidado: `total`
 - `InventoryEntry` contem:
   - `source` (`Git` ou `Dossie`)
+  - `repoPath` como referencia da fonte selecionada
+  - metadados de identificacao: `submissionState`, `submissionPrintDate`, `leaderRole`, `codeSeg`, `linkedContract`
   - `innovationSignals`, `activitySignals`, `plannedResultsSignals`
   - `inferredStatus`
   - campos textuais extraidos: `summary`, `objectives`, `innovationContributions`,
@@ -33,6 +35,8 @@
 - Regra: somente PDFs alimentam o corpus textual do dossie.
 - Regra: o corpus inclui documentos por curadoria/relevancia com fallback minimo.
 - Regra: o registro persistente da ingestao fica em `.labgp_cache/pdf_text/manifest.tsv`.
+- Regra: o reescan processa PDFs automaticamente e atualiza o inventario.
+- Regra: os metadados de identificacao aparecem no topo do detalhe de inventario e na exportacao TSV.
 
 ## Referencias
 - `CONTEXT_MAP.md`

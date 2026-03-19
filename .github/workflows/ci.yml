@@ -5,28 +5,125 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build-and-test:
+  build-test-headless:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Install toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build g++ cmake
-      - name: Configure (Headless)
+          sudo apt-get install -y cmake ninja-build g++
+      - name: Configure
         run: >
-          cmake -S . -B build
+          cmake -S . -B build-headless
           -G Ninja
           -DCMAKE_BUILD_TYPE=Release
           -DLABGP_ENABLE_GUI=OFF
           -DLABGP_WARNINGS_AS_ERRORS=ON
       - name: Build
-        run: cmake --build build --config Release --parallel
+        run: cmake --build build-headless --parallel
       - name: Test
-        run: ctest --test-dir build --output-on-failure
+        run: ctest --test-dir build-headless --output-on-failure
+
+  build-gui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++ libsdl2-dev libgl1-mesa-dev
+      - name: Configure
+        run: >
+          cmake -S . -B build-gui
+          -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DLABGP_WARNINGS_AS_ERRORS=ON
+      - name: Build
+        run: cmake --build build-gui --parallel
+
+  quality-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++ clang-format clang-tidy libsdl2-dev libgl1-mesa-dev
+      - name: Configure
+        run: >
+          cmake -S . -B build-quality
+          -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          -DLABGP_WARNINGS_AS_ERRORS=ON
+      - name: Build
+        run: cmake --build build-quality --parallel
+      - name: Format check
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha }}
+          FALLBACK_BASE_REF: ${{ github.event.before }}
+          HEAD_REF: ${{ github.sha }}
+        run: |
+          if [ -z "$BASE_REF" ] || [ "$BASE_REF" = "0000000000000000000000000000000000000000" ]; then
+            BASE_REF="$FALLBACK_BASE_REF"
+          fi
+          if [ -z "$BASE_REF" ] || [ "$BASE_REF" = "0000000000000000000000000000000000000000" ]; then
+            changed_files=$(find src include tests -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) | sort)
+          else
+            changed_files=$(git diff --name-only --diff-filter=ACMR "$BASE_REF" "$HEAD_REF" -- src include tests | grep -E '\.(cpp|hpp|h)$' || true)
+          fi
+          if [ -z "$changed_files" ]; then
+            echo "No source files changed for format check."
+            exit 0
+          fi
+          printf '%s\n' "$changed_files" | xargs -r clang-format --dry-run --Werror
+      - name: Lint
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha }}
+          FALLBACK_BASE_REF: ${{ github.event.before }}
+          HEAD_REF: ${{ github.sha }}
+        run: |
+          if [ -z "$BASE_REF" ] || [ "$BASE_REF" = "0000000000000000000000000000000000000000" ]; then
+            BASE_REF="$FALLBACK_BASE_REF"
+          fi
+          if [ -z "$BASE_REF" ] || [ "$BASE_REF" = "0000000000000000000000000000000000000000" ]; then
+            changed_files=$(find src tests -type f -name '*.cpp' | sort)
+          else
+            changed_files=$(git diff --name-only --diff-filter=ACMR "$BASE_REF" "$HEAD_REF" -- src tests | grep -E '\.cpp$' || true)
+          fi
+          if [ -z "$changed_files" ]; then
+            echo "No .cpp files changed for clang-tidy."
+            exit 0
+          fi
+          printf '%s\n' "$changed_files" | xargs -r -n 1 clang-tidy -p build-quality --config-file=.clang-tidy --quiet
+
+  sanitizer-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++
+      - name: Configure
+        run: >
+          cmake -S . -B build-sanitize
+          -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DLABGP_ENABLE_GUI=OFF
+          -DLABGP_WARNINGS_AS_ERRORS=ON
+          -DLABGP_ENABLE_SANITIZERS=ON
+      - name: Build
+        run: cmake --build build-sanitize --parallel
+      - name: Test
+        run: ctest --test-dir build-sanitize --output-on-failure

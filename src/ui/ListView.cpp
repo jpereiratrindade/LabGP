@@ -43,6 +43,12 @@ std::string ListView::render(const std::vector<domain::ResearchProject>& project
         << "\n";
     out << std::string(120, '-') << "\n";
 
+    if (rows.empty()) {
+        out << "(nenhum projeto cadastrado)\n";
+        out << "Use o workspace apenas como inventario de fontes; o cadastro manual de projetos sera a fonte oficial.\n\n";
+        return out.str();
+    }
+
     for (const auto& row : rows) {
         const auto& project = *row.first;
         const auto& score = row.second;

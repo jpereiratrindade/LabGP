@@ -28,14 +28,15 @@ ctest --test-dir build --output-on-failure
 - `./build/LabGP` abre GUI (SDL2 + ImGui), com fallback para console.
 - `./build/LabGP --console` força modo texto.
 - `./build/LabGP --gui` força tentativa de GUI.
-- Na GUI, selecione a pasta de projetos pelo menu: `Arquivo > Selecionar pasta de projetos...`.
-- Na GUI, use `Arquivo > Reescanear agora` para atualizar o inventario da pasta atual.
-- `./build/LabGP --workspace /caminho/para/repositorios` seleciona a pasta de projetos a analisar.
+- Na GUI, selecione a pasta de trabalho pelo menu: `Arquivo > Selecionar pasta de trabalho...`.
+- Na GUI, use `Arquivo > Reescanear inventario de fontes` para atualizar apenas a leitura das fontes.
+- Na aba `Inventario`, selecione uma fonte e use `Criar Projeto a Partir Desta Fonte` para registrar o projeto manualmente.
+- `./build/LabGP --workspace /caminho/para/repositorios` seleciona a pasta de trabalho a analisar como inventario de fontes.
 - `./build/LabGP --workspace=/caminho/para/repositorios` alternativa equivalente.
 - `LABGP_WORKSPACE=/caminho/para/repositorios ./build/LabGP` define workspace por variavel de ambiente.
 - `./build/LabGP --pick-workspace` tenta abrir seletor de pasta do sistema (kdialog/zenity/osascript).
-- Para dossies, o parser considera PDFs como fonte textual e usa cache por hash em `.labgp_cache/pdf_text/`.
-- O sistema registra curadoria dos PDFs em `.labgp_cache/pdf_text/manifest.tsv` (tag, relevancia e inclusao no corpus).
+- Para dossies, o parser considera PDFs como fonte textual de apoio e usa cache por hash em `.labgp_cache/pdf_text/`.
+- O sistema registra curadoria dos PDFs em `.labgp_cache/pdf_text/manifest.tsv` (tag, relevancia e inclusao no corpus) para apoiar a selecao manual de fontes.
 
 ## Modelo de avaliacao
 
@@ -61,7 +62,7 @@ LabGP agora trabalha com duas perspectivas complementares:
 
 Na GUI:
 - A aba `Projetos` e a aba `Kanban` permitem trocar a visao de score (`Consolidado`, `Institucional`, `Pesquisador`).
-- A aba `Inventario` mostra os tres scores e os novos sinais de pesquisa (`Inov`, `Ativ`, `ResPrev`).
+- A aba `Inventario` mostra os tres scores, os sinais de pesquisa (`Inov`, `Ativ`, `ResPrev`) e a acao de criar projeto manual a partir da fonte selecionada.
 - A aba `Grafo` plota projetos por `Institucional x Pesquisador`, com cor por qualidade e tamanho por execucao.
 
 ## Parametrizacao das visoes

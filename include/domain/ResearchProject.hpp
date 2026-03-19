@@ -15,18 +15,19 @@ enum class ResearchStatus {
 };
 
 struct ResearchProject {
-    std::string id;
-    std::string title;
-    std::string coordinator;
+    std::string id{};
+    std::string title{};
+    std::string sourceRepoPath{};
+    std::string coordinator{};
     std::string institution{"Nao informado"};
-    std::string program;
-    std::string thematicAxis;
-    std::string callNotice;
+    std::string program{};
+    std::string thematicAxis{};
+    std::string callNotice{};
     std::string projectType{"PD&I"};
-    std::string startDate;
-    std::string endDate;
+    std::string startDate{};
+    std::string endDate{};
     int durationMonths{0};
-    std::string line;
+    std::string line{};
     ResearchStatus status{ResearchStatus::Proposal};
     int openImpediments{0};
     bool softwareIntensive{true};

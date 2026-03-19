@@ -38,15 +38,6 @@ ImU32 bandColorU32(int total) {
     return IM_COL32(214, 75, 75, 255);
 }
 
-const char* perspectiveLabel(ScorePerspective perspective) {
-    switch (perspective) {
-        case ScorePerspective::Institutional: return "Institucional";
-        case ScorePerspective::Researcher: return "Pesquisador";
-        case ScorePerspective::Consolidated:
-        default: return "Consolidado";
-    }
-}
-
 const char* perspectiveShortLabel(ScorePerspective perspective) {
     switch (perspective) {
         case ScorePerspective::Institutional: return "Inst";
@@ -62,6 +53,32 @@ int scoreByPerspective(const domain::ScoreBreakdown& score, ScorePerspective per
         case ScorePerspective::Researcher: return score.researcher;
         case ScorePerspective::Consolidated:
         default: return score.total;
+    }
+}
+
+int statusToIndex(domain::ResearchStatus status) {
+    switch (status) {
+        case domain::ResearchStatus::Proposal: return 0;
+        case domain::ResearchStatus::InReview: return 1;
+        case domain::ResearchStatus::Approved: return 2;
+        case domain::ResearchStatus::Execution: return 3;
+        case domain::ResearchStatus::Analysis: return 4;
+        case domain::ResearchStatus::Publication: return 5;
+        case domain::ResearchStatus::Closed: return 6;
+    }
+    return 0;
+}
+
+domain::ResearchStatus statusFromIndex(int index) {
+    switch (index) {
+        case 0: return domain::ResearchStatus::Proposal;
+        case 1: return domain::ResearchStatus::InReview;
+        case 2: return domain::ResearchStatus::Approved;
+        case 3: return domain::ResearchStatus::Execution;
+        case 4: return domain::ResearchStatus::Analysis;
+        case 5: return domain::ResearchStatus::Publication;
+        case 6: return domain::ResearchStatus::Closed;
+        default: return domain::ResearchStatus::Proposal;
     }
 }
 
@@ -112,159 +129,315 @@ void renderCurationSummary(const domain::InventoryEntry& inv) {
 void renderProjectsTab(
     const std::vector<domain::ResearchProject>& projects,
     const std::vector<domain::InventoryEntry>& inventory,
-    ScorePerspective perspective
+    ScorePerspective perspective,
+    UpdateProjectRequest* requestUpdateProject,
+    std::string* requestProcessInnovationSourceRepoPath
 ) {
     static std::string selectedProjectId;
-    static float projectDetailWidth = 430.f;
-    const float splitterWidth = 6.f;
+    static bool projectEditMode = false;
+    static std::string projectEditDraftId;
+    static bool showEditProjectModal = false;
+    static std::string editProjectId;
+    static std::array<char, 256> editTitleBuf{};
+    static std::array<char, 256> editCoordinatorBuf{};
+    static std::array<char, 256> editInstitutionBuf{};
+    static std::array<char, 256> editProgramBuf{};
+    static std::array<char, 256> editAxisBuf{};
+    static std::array<char, 256> editLineBuf{};
+    static int editStatusIndex = 0;
 
     ImGui::TextColored(ImVec4(0.85f, 0.90f, 1.0f, 1.0f), "Fluxo do Projeto: coluna 'Fluxo (Status)'");
     ImGui::TextDisabled("Score de Qualidade: %s/Inst/Pesq/Total", perspectiveShortLabel(perspective));
+    if (projects.empty()) {
+        ImGui::Spacing();
+        ImGui::TextWrapped("Nenhum projeto cadastrado no momento.");
+        ImGui::TextDisabled("O inventario continua disponivel como apoio de leitura, mas ele nao cria projetos automaticamente.");
+        ImGui::TextDisabled("Proximo passo recomendado: cadastrar o projeto manualmente e escolher os documentos-fonte.");
+        ImGui::Spacing();
+        return;
+    }
     ImGui::Spacing();
 
-    const bool hasDetail = !selectedProjectId.empty();
-    const float detailWidth = hasDetail ? projectDetailWidth : 0.f;
-    const float availableHeight = ImGui::GetContentRegionAvail().y;
-    float tableWidth = ImGui::GetContentRegionAvail().x - detailWidth - (hasDetail ? (splitterWidth + 4.f) : 0.f);
-    if (tableWidth < 300.f) tableWidth = ImGui::GetContentRegionAvail().x;
+    std::vector<const domain::ResearchProject*> rows;
+    rows.reserve(projects.size());
+    for (const auto& p : projects) rows.push_back(&p);
+    std::sort(rows.begin(), rows.end(), [perspective](const auto* a, const auto* b) {
+        const auto as = domain::computeScore(*a);
+        const auto bs = domain::computeScore(*b);
+        const int asPerspective = scoreByPerspective(as, perspective);
+        const int bsPerspective = scoreByPerspective(bs, perspective);
+        if (asPerspective != bsPerspective) return asPerspective > bsPerspective;
+        return a->id < b->id;
+    });
 
-    ImGui::BeginChild("##projects_table_region", ImVec2(tableWidth, availableHeight), false);
-    if (ImGui::BeginTable("projects_table", 12, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
-        ImGui::TableSetupColumn("ID");
-        ImGui::TableSetupColumn("Titulo");
-        ImGui::TableSetupColumn("Fluxo (Status)");
-        ImGui::TableSetupColumn("Tipo");
-        std::string qualityCol = std::string("Qualid(") + perspectiveShortLabel(perspective) + ")";
-        ImGui::TableSetupColumn(qualityCol.c_str());
-        ImGui::TableSetupColumn("Total");
-        ImGui::TableSetupColumn("Inst");
-        ImGui::TableSetupColumn("Pesq");
-        ImGui::TableSetupColumn("Oper");
-        ImGui::TableSetupColumn("Matur");
-        ImGui::TableSetupColumn("Exec");
-        ImGui::TableSetupColumn("Conf");
-        ImGui::TableHeadersRow();
+    bool validSelection = false;
+    for (const auto* p : rows) {
+        if (p && p->id == selectedProjectId) {
+            validSelection = true;
+            break;
+        }
+    }
+    if (!validSelection && !rows.empty()) {
+        selectedProjectId = rows.front()->id;
+    }
 
-        std::vector<const domain::ResearchProject*> rows;
-        rows.reserve(projects.size());
-        for (const auto& p : projects) rows.push_back(&p);
+    const domain::ResearchProject* selected = nullptr;
+    for (const auto* p : rows) {
+        if (p && p->id == selectedProjectId) {
+            selected = p;
+            break;
+        }
+    }
+    if (!selected) return;
 
-        std::sort(rows.begin(), rows.end(), [perspective](const auto* a, const auto* b) {
-            const auto as = domain::computeScore(*a);
-            const auto bs = domain::computeScore(*b);
-            const int asPerspective = scoreByPerspective(as, perspective);
-            const int bsPerspective = scoreByPerspective(bs, perspective);
-            if (asPerspective != bsPerspective) return asPerspective > bsPerspective;
-            return a->id < b->id;
-        });
-
+    auto selectedScore = domain::computeScore(*selected);
+    std::string comboLabel = selected->id + " | " + selected->title +
+                             " | Q(" + perspectiveShortLabel(perspective) + "): " +
+                             std::to_string(scoreByPerspective(selectedScore, perspective));
+    ImGui::SetNextItemWidth(std::min(760.0f, std::max(420.0f, ImGui::GetContentRegionAvail().x * 0.65f)));
+    if (ImGui::BeginCombo("Projeto em foco", comboLabel.c_str())) {
         for (const auto* p : rows) {
+            if (!p) continue;
             const auto score = domain::computeScore(*p);
-            ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0);
-            bool selected = (selectedProjectId == p->id);
-            if (ImGui::Selectable(("##proj_row_" + p->id).c_str(), selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap)) {
-                selectedProjectId = selected ? "" : p->id;
+            const bool isSelected = (selectedProjectId == p->id);
+            std::string label = p->id + " | " + p->title +
+                                " | " + domain::toString(p->status) +
+                                " | Q(" + perspectiveShortLabel(perspective) + "): " +
+                                std::to_string(scoreByPerspective(score, perspective));
+            if (ImGui::Selectable(label.c_str(), isSelected)) {
+                selectedProjectId = p->id;
             }
-            ImGui::SameLine();
-            ImGui::TextUnformatted(p->id.c_str());
-            ImGui::TableSetColumnIndex(1); ImGui::TextUnformatted(p->title.c_str());
-            ImGui::TableSetColumnIndex(2); ImGui::TextUnformatted(domain::toString(p->status).c_str());
-            ImGui::TableSetColumnIndex(3); ImGui::TextUnformatted(p->softwareIntensive ? "Software" : "Pesquisa");
-            ImGui::TableSetColumnIndex(4); ImGui::Text("%d", scoreByPerspective(score, perspective));
-            ImGui::TableSetColumnIndex(5); ImGui::Text("%d", score.total);
-            ImGui::TableSetColumnIndex(6); ImGui::Text("%d", score.institutional);
-            ImGui::TableSetColumnIndex(7); ImGui::Text("%d", score.researcher);
-            ImGui::TableSetColumnIndex(8); ImGui::Text("%d", score.operational);
-            ImGui::TableSetColumnIndex(9); ImGui::Text("%d", score.maturity);
-            ImGui::TableSetColumnIndex(10); ImGui::Text("%d", score.execution);
-            ImGui::TableSetColumnIndex(11);
-            if (score.reliabilityApplicable) {
-                ImGui::Text("%d", score.reliability);
-            } else {
-                ImGui::TextUnformatted("N/A");
+            if (isSelected) ImGui::SetItemDefaultFocus();
+        }
+        ImGui::EndCombo();
+    }
+    for (const auto* p : rows) {
+        if (p && p->id == selectedProjectId) {
+            selected = p;
+            break;
+        }
+    }
+    if (!selected) return;
+
+    const auto score = domain::computeScore(*selected);
+    if (projectEditDraftId != selected->id) {
+        std::snprintf(editTitleBuf.data(), editTitleBuf.size(), "%s", selected->title.c_str());
+        std::snprintf(editCoordinatorBuf.data(), editCoordinatorBuf.size(), "%s", selected->coordinator.c_str());
+        std::snprintf(editInstitutionBuf.data(), editInstitutionBuf.size(), "%s", selected->institution.c_str());
+        std::snprintf(editProgramBuf.data(), editProgramBuf.size(), "%s", selected->program.c_str());
+        std::snprintf(editAxisBuf.data(), editAxisBuf.size(), "%s", selected->thematicAxis.c_str());
+        std::snprintf(editLineBuf.data(), editLineBuf.size(), "%s", selected->line.c_str());
+        editStatusIndex = statusToIndex(selected->status);
+        projectEditDraftId = selected->id;
+    }
+
+    ImGui::Checkbox("Modo edicao", &projectEditMode);
+    ImGui::SameLine();
+    ImGui::TextDisabled("Fluxo: %s", domain::toString(selected->status).c_str());
+    ImGui::TextDisabled("Total %d | Inst %d | Pesq %d | Exec %d | Conf %s",
+                        score.total, score.institutional, score.researcher, score.execution,
+                        score.reliabilityApplicable ? std::to_string(score.reliability).c_str() : "N/A");
+    ImGui::Separator();
+
+    auto findInventoryForProject = [&](const domain::ResearchProject& p) -> const domain::InventoryEntry* {
+        if (!p.sourceRepoPath.empty()) {
+            for (const auto& it : inventory) {
+                if (it.repoPath == p.sourceRepoPath) return &it;
             }
         }
+        const std::string prefix = "Integracao: ";
+        if (p.title.rfind(prefix, 0) != 0) return nullptr;
+        const std::string repoName = p.title.substr(prefix.size());
+        for (const auto& it : inventory) {
+            if (it.repoName == repoName) return &it;
+        }
+        return nullptr;
+    };
+    const domain::InventoryEntry* inv = findInventoryForProject(*selected);
 
-        ImGui::EndTable();
+    auto renderField = [](const char* label, const std::string& value) {
+        ImGui::TextDisabled("%s", label);
+        if (value.empty()) ImGui::TextUnformatted("-");
+        else ImGui::TextWrapped("%s", value.c_str());
+    };
+    auto renderListField = [](const char* label, const std::vector<std::string>& values) {
+        ImGui::TextDisabled("%s", label);
+        if (values.empty()) {
+            ImGui::TextUnformatted("-");
+            return;
+        }
+        for (const auto& value : values) ImGui::BulletText("%s", value.c_str());
+    };
+
+    ImGui::BeginChild("##projects_detail_region", ImVec2(0.f, ImGui::GetContentRegionAvail().y), true);
+    ImGui::TextColored(ImVec4(0.55f, 0.75f, 1.f, 1.f), "%s", selected->id.c_str());
+    ImGui::TextWrapped("%s", selected->title.c_str());
+    ImGui::Separator();
+    ImGui::Text("Fluxo: %s", domain::toString(selected->status).c_str());
+    ImGui::Text("Tipo: %s", selected->softwareIntensive ? "Software" : "Pesquisa");
+    ImGui::Text("Qualidade (%s): %d", perspectiveShortLabel(perspective), scoreByPerspective(score, perspective));
+    ImGui::Text("Total: %d | Inst: %d | Pesq: %d", score.total, score.institutional, score.researcher);
+    ImGui::Text("Oper: %d | Matur: %d | Exec: %d | Conf: %s",
+        score.operational, score.maturity, score.execution,
+        score.reliabilityApplicable ? std::to_string(score.reliability).c_str() : "N/A");
+    ImGui::Separator();
+    renderField("Programa", selected->program);
+    renderField("Eixo tematico", selected->thematicAxis);
+    renderField("Linha", selected->line);
+    renderField("Coordenacao", selected->coordinator);
+    renderField("Instituicao", selected->institution);
+    renderField("Fonte associada", selected->sourceRepoPath);
+    if (inv && ImGui::Button("Processar Inovacao/Atividades (PDF)")) {
+        if (requestProcessInnovationSourceRepoPath) {
+            *requestProcessInnovationSourceRepoPath = inv->repoPath;
+        }
+    }
+    if (ImGui::Button("Editar Projeto")) {
+        showEditProjectModal = true;
+        editProjectId = selected->id;
+        std::snprintf(editTitleBuf.data(), editTitleBuf.size(), "%s", selected->title.c_str());
+        std::snprintf(editCoordinatorBuf.data(), editCoordinatorBuf.size(), "%s", selected->coordinator.c_str());
+        std::snprintf(editInstitutionBuf.data(), editInstitutionBuf.size(), "%s", selected->institution.c_str());
+        std::snprintf(editProgramBuf.data(), editProgramBuf.size(), "%s", selected->program.c_str());
+        std::snprintf(editAxisBuf.data(), editAxisBuf.size(), "%s", selected->thematicAxis.c_str());
+        std::snprintf(editLineBuf.data(), editLineBuf.size(), "%s", selected->line.c_str());
+        editStatusIndex = statusToIndex(selected->status);
+        ImGui::OpenPopup("edit_project_modal");
+    }
+    if (projectEditMode) {
+        ImGui::Separator();
+        ImGui::TextDisabled("Edicao inline do projeto selecionado");
+        ImGui::InputText("Titulo (edicao)", editTitleBuf.data(), editTitleBuf.size());
+        ImGui::InputText("Coordenacao (edicao)", editCoordinatorBuf.data(), editCoordinatorBuf.size());
+        ImGui::InputText("Instituicao (edicao)", editInstitutionBuf.data(), editInstitutionBuf.size());
+        ImGui::InputText("Programa (edicao)", editProgramBuf.data(), editProgramBuf.size());
+        ImGui::InputText("Eixo tematico (edicao)", editAxisBuf.data(), editAxisBuf.size());
+        ImGui::InputText("Linha (edicao)", editLineBuf.data(), editLineBuf.size());
+        const char* statuses[] = {
+            "Proposta",
+            "Em avaliacao",
+            "Aprovado",
+            "Execucao",
+            "Analise",
+            "Publicacao",
+            "Encerrado"
+        };
+        ImGui::Combo("Status (edicao)", &editStatusIndex, statuses, IM_ARRAYSIZE(statuses));
+        const bool canSaveInline = editTitleBuf[0] != '\0';
+        if (ImGui::Button("Salvar Alteracoes (inline)")) {
+            if (canSaveInline && requestUpdateProject) {
+                requestUpdateProject->project = *selected;
+                requestUpdateProject->project.title = editTitleBuf.data();
+                requestUpdateProject->project.coordinator = editCoordinatorBuf.data();
+                requestUpdateProject->project.institution = editInstitutionBuf.data();
+                requestUpdateProject->project.program = editProgramBuf.data();
+                requestUpdateProject->project.thematicAxis = editAxisBuf.data();
+                requestUpdateProject->project.line = editLineBuf.data();
+                requestUpdateProject->project.status = statusFromIndex(editStatusIndex);
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancelar Edicao (inline)")) {
+            std::snprintf(editTitleBuf.data(), editTitleBuf.size(), "%s", selected->title.c_str());
+            std::snprintf(editCoordinatorBuf.data(), editCoordinatorBuf.size(), "%s", selected->coordinator.c_str());
+            std::snprintf(editInstitutionBuf.data(), editInstitutionBuf.size(), "%s", selected->institution.c_str());
+            std::snprintf(editProgramBuf.data(), editProgramBuf.size(), "%s", selected->program.c_str());
+            std::snprintf(editAxisBuf.data(), editAxisBuf.size(), "%s", selected->thematicAxis.c_str());
+            std::snprintf(editLineBuf.data(), editLineBuf.size(), "%s", selected->line.c_str());
+            editStatusIndex = statusToIndex(selected->status);
+        }
+        if (!canSaveInline) {
+            ImGui::TextDisabled("Titulo e obrigatorio para salvar.");
+        }
+    }
+    if (inv) {
+        ImGui::Separator();
+        renderCurationSummary(*inv);
+        ImGui::Separator();
+        renderField("Resumo", inv->summary);
+        renderField("Objetivos", inv->objectives);
+        renderField("Contribuicoes para Inovacao", inv->innovationContributions);
+        renderField("Atividades de Pesquisa", inv->researchActivities);
+        renderField("Resultados Esperados", inv->expectedResults);
+        ImGui::TextDisabled("Equipe");
+        if (inv->teamMembers.empty()) {
+            ImGui::TextUnformatted("-");
+        } else {
+            for (const auto& m : inv->teamMembers) ImGui::BulletText("%s", m.c_str());
+        }
+        renderField("Estado da submissao", inv->submissionState);
+        renderField("Data de impressao", inv->submissionPrintDate);
+        renderField("Cargo do lider", inv->leaderRole);
+        renderField("Codigo SEG", inv->codeSeg);
+        renderField("Contrato vinculado", inv->linkedContract);
+        renderListField("Instituicoes financeiras", inv->financialInstitutions);
+        renderListField("Instituicoes parceiras", inv->partnerInstitutions);
+        renderListField("Fundacoes de apoio", inv->supportFoundations);
+        if (!inv->innovationSolutionName.empty() ||
+            !inv->innovationSolutionDescription.empty() ||
+            !inv->innovationSolutionResponsible.empty()) {
+            ImGui::Separator();
+            ImGui::TextDisabled("Solucao para Inovacao");
+            renderField("Nome", inv->innovationSolutionName);
+            renderField("Descricao", inv->innovationSolutionDescription);
+            renderField("Responsavel", inv->innovationSolutionResponsible);
+            renderField("Data de inicio", inv->innovationSolutionStartDate);
+            renderField("Duracao (meses)", std::to_string(inv->innovationSolutionDurationMonths));
+            renderField("Data de termino", inv->innovationSolutionEndDate);
+        }
+        ImGui::Separator();
+        renderInterpretedDocuments(inv->interpretedDocuments);
     }
     ImGui::EndChild();
 
-    if (!selectedProjectId.empty()) {
-        const domain::ResearchProject* selected = nullptr;
-        for (const auto& p : projects) {
-            if (p.id == selectedProjectId) {
-                selected = &p;
-                break;
-            }
-        }
-        if (!selected) {
-            selectedProjectId.clear();
-            return;
-        }
-        const auto score = domain::computeScore(*selected);
-        auto findInventoryForProject = [&](const domain::ResearchProject& p) -> const domain::InventoryEntry* {
-            const std::string prefix = "Integracao: ";
-            if (p.title.rfind(prefix, 0) != 0) return nullptr;
-            const std::string repoName = p.title.substr(prefix.size());
-            for (const auto& it : inventory) {
-                if (it.repoName == repoName) return &it;
-            }
-            return nullptr;
-        };
-        const domain::InventoryEntry* inv = findInventoryForProject(*selected);
+    if (showEditProjectModal) {
+        ImGui::SetNextWindowSize(ImVec2(640, 0), ImGuiCond_FirstUseEver);
+        if (ImGui::BeginPopupModal("edit_project_modal", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextDisabled("ID: %s", editProjectId.c_str());
+            ImGui::InputText("Titulo", editTitleBuf.data(), editTitleBuf.size());
+            ImGui::InputText("Coordenacao", editCoordinatorBuf.data(), editCoordinatorBuf.size());
+            ImGui::InputText("Instituicao", editInstitutionBuf.data(), editInstitutionBuf.size());
+            ImGui::InputText("Programa", editProgramBuf.data(), editProgramBuf.size());
+            ImGui::InputText("Eixo tematico", editAxisBuf.data(), editAxisBuf.size());
+            ImGui::InputText("Linha", editLineBuf.data(), editLineBuf.size());
 
-        auto renderField = [](const char* label, const std::string& value) {
-            ImGui::TextDisabled("%s", label);
-            if (value.empty()) ImGui::TextUnformatted("-");
-            else ImGui::TextWrapped("%s", value.c_str());
-        };
+            const char* statuses[] = {
+                "Proposta",
+                "Em avaliacao",
+                "Aprovado",
+                "Execucao",
+                "Analise",
+                "Publicacao",
+                "Encerrado"
+            };
+            ImGui::Combo("Status", &editStatusIndex, statuses, IM_ARRAYSIZE(statuses));
 
-        ImGui::SameLine(0.f, 2.f);
-        ImGui::InvisibleButton("##projects_splitter", ImVec2(splitterWidth, availableHeight));
-        if (ImGui::IsItemActive()) {
-            projectDetailWidth -= ImGui::GetIO().MouseDelta.x;
-            projectDetailWidth = std::clamp(projectDetailWidth, 300.0f, 760.0f);
-        }
-        ImGui::SameLine(0.f, 2.f);
-        ImGui::BeginChild("##projects_detail_region", ImVec2(projectDetailWidth, availableHeight), true);
-        if (ImGui::SmallButton("X")) selectedProjectId.clear();
-        ImGui::Spacing();
-        ImGui::TextColored(ImVec4(0.55f, 0.75f, 1.f, 1.f), "%s", selected->id.c_str());
-        ImGui::TextWrapped("%s", selected->title.c_str());
-        ImGui::Separator();
-        ImGui::Text("Fluxo: %s", domain::toString(selected->status).c_str());
-        ImGui::Text("Tipo: %s", selected->softwareIntensive ? "Software" : "Pesquisa");
-        ImGui::Text("Qualidade (%s): %d", perspectiveShortLabel(perspective), scoreByPerspective(score, perspective));
-        ImGui::Text("Total: %d | Inst: %d | Pesq: %d", score.total, score.institutional, score.researcher);
-        ImGui::Text("Oper: %d | Matur: %d | Exec: %d | Conf: %s",
-            score.operational, score.maturity, score.execution,
-            score.reliabilityApplicable ? std::to_string(score.reliability).c_str() : "N/A");
-        ImGui::Separator();
-        renderField("Programa", selected->program);
-        renderField("Eixo tematico", selected->thematicAxis);
-        renderField("Linha", selected->line);
-        renderField("Coordenacao", selected->coordinator);
-        renderField("Instituicao", selected->institution);
-        if (inv) {
-            ImGui::Separator();
-            renderCurationSummary(*inv);
-            ImGui::Separator();
-            renderField("Resumo", inv->summary);
-            renderField("Objetivos", inv->objectives);
-            renderField("Contribuicoes para Inovacao", inv->innovationContributions);
-            renderField("Atividades de Pesquisa", inv->researchActivities);
-            renderField("Resultados Esperados", inv->expectedResults);
-            ImGui::TextDisabled("Equipe");
-            if (inv->teamMembers.empty()) {
-                ImGui::TextUnformatted("-");
-            } else {
-                for (const auto& m : inv->teamMembers) ImGui::BulletText("%s", m.c_str());
+            if (ImGui::Button("Salvar")) {
+                if (requestUpdateProject) {
+                    const auto current = std::find_if(projects.begin(), projects.end(), [&](const domain::ResearchProject& p) {
+                        return p.id == editProjectId;
+                    });
+                    if (current != projects.end()) {
+                        requestUpdateProject->project = *current;
+                        requestUpdateProject->project.title = editTitleBuf.data();
+                        requestUpdateProject->project.coordinator = editCoordinatorBuf.data();
+                        requestUpdateProject->project.institution = editInstitutionBuf.data();
+                        requestUpdateProject->project.program = editProgramBuf.data();
+                        requestUpdateProject->project.thematicAxis = editAxisBuf.data();
+                        requestUpdateProject->project.line = editLineBuf.data();
+                        requestUpdateProject->project.status = statusFromIndex(editStatusIndex);
+                    }
+                }
+                showEditProjectModal = false;
+                ImGui::CloseCurrentPopup();
             }
-            ImGui::Separator();
-            renderInterpretedDocuments(inv->interpretedDocuments);
+            ImGui::SameLine();
+            if (ImGui::Button("Cancelar")) {
+                showEditProjectModal = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
         }
-        ImGui::EndChild();
     }
 }
 
@@ -319,79 +492,99 @@ void renderKanbanTab(const std::vector<domain::ResearchProject>& projects, Score
     }
 }
 
-void renderInventoryTab(const std::vector<domain::InventoryEntry>& inventory) {
+void renderInventoryTab(
+    const std::vector<domain::InventoryEntry>& inventory,
+    std::string* requestCreateFromSourceRepoPath,
+    std::string* requestProcessInnovationSourceRepoPath,
+    CreateProjectRequest* requestCreateProject
+) {
     static std::string selectedRepoPath;
-    static float inventoryDetailWidth = 420.f;
-    const float splitterWidth = 6.f;
+    static bool inventoryEditMode = false;
+    static std::string inventoryEditDraftRepoPath;
+    static std::array<char, 128> inventoryProjectIdBuf{};
+    static std::array<char, 256> inventoryProjectTitleBuf{};
+    static std::array<char, 256> inventoryProjectCoordinatorBuf{};
+    static std::array<char, 256> inventoryProjectInstitutionBuf{};
 
-    ImGui::Text("Repositorios detectados: %d", static_cast<int>(inventory.size()));
-    ImGui::TextColored(ImVec4(0.85f, 0.90f, 1.0f, 1.0f), "Fluxo do Projeto: coluna 'Fluxo (Status inferido)'.");
+    ImGui::Text("Fontes detectadas: %d", static_cast<int>(inventory.size()));
+    ImGui::TextColored(ImVec4(0.85f, 0.90f, 1.0f, 1.0f), "Leitura assistida de repositorios/dossies; nada daqui vira projeto automaticamente.");
     ImGui::TextDisabled("Score de Qualidade: Total/Inst/Pesq/Oper/Matur/Conf.");
     ImGui::Spacing();
 
-    const bool hasDetail = !selectedRepoPath.empty();
-    const float detailWidth = hasDetail ? inventoryDetailWidth : 0.f;
-    const float availableHeight = ImGui::GetContentRegionAvail().y;
-    float tableWidth = ImGui::GetContentRegionAvail().x - detailWidth - (hasDetail ? (splitterWidth + 4.f) : 0.f);
-    if (tableWidth < 300.f) tableWidth = ImGui::GetContentRegionAvail().x;
-
-    ImGui::BeginChild("##inventory_table_region", ImVec2(tableWidth, availableHeight), false);
-    if (ImGui::BeginTable("inventory_table", 13, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
-        ImGui::TableSetupColumn("Repo");
-        ImGui::TableSetupColumn("Origem");
-        ImGui::TableSetupColumn("Total");
-        ImGui::TableSetupColumn("Inst");
-        ImGui::TableSetupColumn("Pesq");
-        ImGui::TableSetupColumn("Oper");
-        ImGui::TableSetupColumn("Matur");
-        ImGui::TableSetupColumn("Conf");
-        ImGui::TableSetupColumn("Inov");
-        ImGui::TableSetupColumn("Ativ");
-        ImGui::TableSetupColumn("ResPrev");
-        ImGui::TableSetupColumn("Curad");
-        ImGui::TableSetupColumn("Fluxo (Status inferido)");
-        ImGui::TableHeadersRow();
-
-        for (const auto& it : inventory) {
-            ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0);
-            bool selected = (selectedRepoPath == it.repoPath);
-            if (ImGui::Selectable(("##inv_row_" + it.repoPath).c_str(), selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap)) {
-                selectedRepoPath = selected ? "" : it.repoPath;
-            }
-            ImGui::SameLine();
-            ImGui::TextUnformatted(it.repoName.c_str());
-            ImGui::TableSetColumnIndex(1); ImGui::TextUnformatted(it.source.c_str());
-            ImGui::TableSetColumnIndex(2); ImGui::Text("%d", it.score.total);
-            ImGui::TableSetColumnIndex(3); ImGui::Text("%d", it.score.institutional);
-            ImGui::TableSetColumnIndex(4); ImGui::Text("%d", it.score.researcher);
-            ImGui::TableSetColumnIndex(5); ImGui::Text("%d", it.score.operational);
-            ImGui::TableSetColumnIndex(6); ImGui::Text("%d", it.score.maturity);
-            ImGui::TableSetColumnIndex(7); ImGui::Text("%d", it.score.reliability);
-            ImGui::TableSetColumnIndex(8); ImGui::Text("%d", it.innovationSignals);
-            ImGui::TableSetColumnIndex(9); ImGui::Text("%d", it.activitySignals);
-            ImGui::TableSetColumnIndex(10); ImGui::Text("%d", it.plannedResultsSignals);
-            ImGui::TableSetColumnIndex(11); ImGui::Text("%d/%d", it.interpretedDocsIncluded, it.interpretedDocsTotal);
-            ImGui::TableSetColumnIndex(12); ImGui::TextUnformatted(domain::toString(it.inferredStatus).c_str());
-        }
-
-        ImGui::EndTable();
+    if (inventory.empty()) {
+        ImGui::TextDisabled("Nenhuma fonte detectada no workspace atual.");
+        ImGui::TextDisabled("Use 'Selecionar pasta' e depois 'Reescanear' para carregar repositorios/dossies.");
+        return;
     }
-    ImGui::EndChild();
 
-    if (!selectedRepoPath.empty()) {
-        const domain::InventoryEntry* selected = nullptr;
+    bool validSelection = false;
+    for (const auto& it : inventory) {
+        if (it.repoPath == selectedRepoPath) {
+            validSelection = true;
+            break;
+        }
+    }
+    if (!validSelection) {
+        selectedRepoPath = inventory.front().repoPath;
+    }
+
+    const domain::InventoryEntry* selected = nullptr;
+    for (const auto& it : inventory) {
+        if (it.repoPath == selectedRepoPath) {
+            selected = &it;
+            break;
+        }
+    }
+    if (!selected) return;
+    if (inventoryEditDraftRepoPath != selected->repoPath) {
+        const std::string defaultTitle = !selected->projectSnapshot.title.empty()
+            ? selected->projectSnapshot.title
+            : selected->repoName;
+        const std::string defaultCoordinator = !selected->projectSnapshot.coordinator.empty()
+            ? selected->projectSnapshot.coordinator
+            : "Coordenacao a definir";
+        const std::string defaultInstitution = !selected->projectSnapshot.institution.empty()
+            ? selected->projectSnapshot.institution
+            : "Nao informado";
+        std::snprintf(inventoryProjectIdBuf.data(), inventoryProjectIdBuf.size(), "PRJ-%s", selected->repoName.c_str());
+        std::snprintf(inventoryProjectTitleBuf.data(), inventoryProjectTitleBuf.size(), "%s", defaultTitle.c_str());
+        std::snprintf(inventoryProjectCoordinatorBuf.data(), inventoryProjectCoordinatorBuf.size(), "%s", defaultCoordinator.c_str());
+        std::snprintf(inventoryProjectInstitutionBuf.data(), inventoryProjectInstitutionBuf.size(), "%s", defaultInstitution.c_str());
+        inventoryEditDraftRepoPath = selected->repoPath;
+    }
+
+    std::string comboLabel = selected->repoName + " [" + selected->source + "]  Q:" + std::to_string(selected->score.total);
+    ImGui::SetNextItemWidth(std::min(620.0f, std::max(420.0f, ImGui::GetContentRegionAvail().x * 0.55f)));
+    if (ImGui::BeginCombo("Fonte em curadoria", comboLabel.c_str())) {
         for (const auto& it : inventory) {
-            if (it.repoPath == selectedRepoPath) {
-                selected = &it;
-                break;
+            const bool isSelected = (selectedRepoPath == it.repoPath);
+            std::string label = it.repoName + " [" + it.source + "]  Q:" + std::to_string(it.score.total) +
+                                "  Inst:" + std::to_string(it.score.institutional) +
+                                "  Pesq:" + std::to_string(it.score.researcher);
+            if (ImGui::Selectable(label.c_str(), isSelected)) {
+                selectedRepoPath = it.repoPath;
             }
+            if (isSelected) ImGui::SetItemDefaultFocus();
         }
-        if (!selected) {
-            selectedRepoPath.clear();
-            return;
+        ImGui::EndCombo();
+    }
+    selected = nullptr;
+    for (const auto& it : inventory) {
+        if (it.repoPath == selectedRepoPath) {
+            selected = &it;
+            break;
         }
+    }
+    if (!selected) return;
+    ImGui::Checkbox("Modo edicao", &inventoryEditMode);
+    ImGui::SameLine();
+    ImGui::TextDisabled("Fluxo sugerido: %s", domain::toString(selected->inferredStatus).c_str());
+    ImGui::TextDisabled("Sinais: Inov %d | Ativ %d | ResPrev %d | Curadoria %d/%d",
+                        selected->innovationSignals, selected->activitySignals, selected->plannedResultsSignals,
+                        selected->interpretedDocsIncluded, selected->interpretedDocsTotal);
+    ImGui::Separator();
 
+    {
         auto renderField = [](const char* label, const std::string& value) {
             ImGui::TextDisabled("%s", label);
             if (value.empty()) {
@@ -400,19 +593,99 @@ void renderInventoryTab(const std::vector<domain::InventoryEntry>& inventory) {
                 ImGui::TextWrapped("%s", value.c_str());
             }
         };
+        auto renderListField = [](const char* label, const std::vector<std::string>& values) {
+            ImGui::TextDisabled("%s", label);
+            if (values.empty()) {
+                ImGui::TextUnformatted("-");
+                return;
+            }
+            for (const auto& value : values) {
+                ImGui::BulletText("%s", value.c_str());
+            }
+        };
 
-        ImGui::SameLine(0.f, 2.f);
-        ImGui::InvisibleButton("##inventory_splitter", ImVec2(splitterWidth, availableHeight));
-        if (ImGui::IsItemActive()) {
-            inventoryDetailWidth -= ImGui::GetIO().MouseDelta.x;
-            inventoryDetailWidth = std::clamp(inventoryDetailWidth, 300.0f, 760.0f);
-        }
-        ImGui::SameLine(0.f, 2.f);
-        ImGui::BeginChild("##inventory_detail_region", ImVec2(inventoryDetailWidth, availableHeight), true);
-        if (ImGui::SmallButton("X")) selectedRepoPath.clear();
-        ImGui::Spacing();
+        const float detailHeight = ImGui::GetContentRegionAvail().y;
+        ImGui::BeginChild("##inventory_detail_region", ImVec2(0.f, detailHeight), true);
         ImGui::TextColored(ImVec4(0.55f, 0.75f, 1.f, 1.f), "%s", selected->repoName.c_str());
         ImGui::TextDisabled("%s", selected->repoPath.c_str());
+        if (ImGui::Button("Criar Projeto a Partir Desta Fonte")) {
+            if (requestCreateFromSourceRepoPath) {
+                *requestCreateFromSourceRepoPath = selected->repoPath;
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Processar Inovacao/Atividades")) {
+            if (requestProcessInnovationSourceRepoPath) {
+                *requestProcessInnovationSourceRepoPath = selected->repoPath;
+            }
+        }
+        if (inventoryEditMode) {
+            ImGui::Separator();
+            ImGui::TextDisabled("Edicao inline para criacao de projeto desta fonte");
+            ImGui::InputText("ID do projeto (edicao)", inventoryProjectIdBuf.data(), inventoryProjectIdBuf.size());
+            ImGui::InputText("Titulo (edicao)", inventoryProjectTitleBuf.data(), inventoryProjectTitleBuf.size());
+            ImGui::InputText("Coordenacao (edicao)", inventoryProjectCoordinatorBuf.data(), inventoryProjectCoordinatorBuf.size());
+            ImGui::InputText("Instituicao (edicao)", inventoryProjectInstitutionBuf.data(), inventoryProjectInstitutionBuf.size());
+            const bool canCreateInline = inventoryProjectIdBuf[0] != '\0' && inventoryProjectTitleBuf[0] != '\0';
+            if (ImGui::Button("Criar Projeto (inline)")) {
+                if (canCreateInline && requestCreateProject) {
+                    requestCreateProject->sourceRepoPath = selected->repoPath;
+                    requestCreateProject->projectId = inventoryProjectIdBuf.data();
+                    requestCreateProject->projectTitle = inventoryProjectTitleBuf.data();
+                    requestCreateProject->coordinator = inventoryProjectCoordinatorBuf.data();
+                    requestCreateProject->institution = inventoryProjectInstitutionBuf.data();
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Restaurar Defaults (inline)")) {
+                const std::string defaultTitle = !selected->projectSnapshot.title.empty()
+                    ? selected->projectSnapshot.title
+                    : selected->repoName;
+                const std::string defaultCoordinator = !selected->projectSnapshot.coordinator.empty()
+                    ? selected->projectSnapshot.coordinator
+                    : "Coordenacao a definir";
+                const std::string defaultInstitution = !selected->projectSnapshot.institution.empty()
+                    ? selected->projectSnapshot.institution
+                    : "Nao informado";
+                std::snprintf(inventoryProjectIdBuf.data(), inventoryProjectIdBuf.size(), "PRJ-%s", selected->repoName.c_str());
+                std::snprintf(inventoryProjectTitleBuf.data(), inventoryProjectTitleBuf.size(), "%s", defaultTitle.c_str());
+                std::snprintf(inventoryProjectCoordinatorBuf.data(), inventoryProjectCoordinatorBuf.size(), "%s", defaultCoordinator.c_str());
+                std::snprintf(inventoryProjectInstitutionBuf.data(), inventoryProjectInstitutionBuf.size(), "%s", defaultInstitution.c_str());
+            }
+            if (!canCreateInline) {
+                ImGui::TextDisabled("Preencha ID e titulo para criar projeto inline.");
+            }
+        }
+        ImGui::Separator();
+        ImGui::TextDisabled("Identificacao Embrapa");
+        renderField("Titulo do projeto", selected->projectSnapshot.title);
+        renderField("Lider/Responsavel", selected->projectSnapshot.coordinator);
+        renderField("Instituicao do lider", selected->projectSnapshot.institution);
+        renderField("Cargo do lider", selected->leaderRole);
+        renderField("Estado da submissao", selected->submissionState);
+        renderField("Data de impressao", selected->submissionPrintDate);
+        renderField("Codigo SEG", selected->codeSeg);
+        renderField("Contrato vinculado", selected->linkedContract);
+        renderField("Edital/Chamada", selected->projectSnapshot.callNotice);
+        renderField("Tipo de projeto", selected->projectSnapshot.projectType);
+        renderField("Data de inicio", selected->projectSnapshot.startDate);
+        renderField("Duracao (meses)", selected->projectSnapshot.durationMonths > 0 ? std::to_string(selected->projectSnapshot.durationMonths) : std::string{});
+        renderField("Data de termino", selected->projectSnapshot.endDate);
+        renderListField("Instituicoes financeiras", selected->financialInstitutions);
+        renderListField("Instituicoes parceiras", selected->partnerInstitutions);
+        renderListField("Fundacoes de apoio", selected->supportFoundations);
+        if (!selected->innovationSolutionName.empty() ||
+            !selected->innovationSolutionDescription.empty() ||
+            !selected->innovationSolutionResponsible.empty()) {
+            ImGui::Separator();
+            ImGui::TextDisabled("Solucao para Inovacao");
+            renderField("Nome", selected->innovationSolutionName);
+            renderField("Descricao", selected->innovationSolutionDescription);
+            renderField("Responsavel", selected->innovationSolutionResponsible);
+            renderField("Data de inicio", selected->innovationSolutionStartDate);
+            renderField("Duracao (meses)", std::to_string(selected->innovationSolutionDurationMonths));
+            renderField("Data de termino", selected->innovationSolutionEndDate);
+        }
         ImGui::Separator();
         renderCurationSummary(*selected);
         ImGui::Separator();
@@ -437,6 +710,51 @@ void renderInventoryTab(const std::vector<domain::InventoryEntry>& inventory) {
         ImGui::Separator();
         renderInterpretedDocuments(selected->interpretedDocuments);
         ImGui::EndChild();
+    }
+}
+
+void renderDocumentsTab(
+    const std::vector<domain::InventoryEntry>& inventory
+) {
+    ImGui::TextColored(ImVec4(0.85f, 0.90f, 1.0f, 1.0f), "Curadoria de Documentos PDF");
+    ImGui::TextDisabled("Processamento de PDFs ocorre automaticamente no reescan do workspace.");
+    ImGui::Separator();
+
+    int totalDocs = 0;
+    int includedDocs = 0;
+    for (const auto& inv : inventory) {
+        totalDocs += static_cast<int>(inv.interpretedDocuments.size());
+        includedDocs += inv.interpretedDocsIncluded;
+    }
+    ImGui::Text("Documentos detectados: %d | Incluidos no corpus: %d", totalDocs, includedDocs);
+    ImGui::Spacing();
+
+    if (ImGui::BeginTable("documents_table", 7, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable)) {
+        ImGui::TableSetupColumn("Fonte");
+        ImGui::TableSetupColumn("Arquivo");
+        ImGui::TableSetupColumn("Tag");
+        ImGui::TableSetupColumn("Corpus");
+        ImGui::TableSetupColumn("Bytes");
+        ImGui::TableSetupColumn("Cache");
+        ImGui::TableSetupColumn("SHA");
+        ImGui::TableHeadersRow();
+
+        for (const auto& inv : inventory) {
+            for (const auto& doc : inv.interpretedDocuments) {
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted(inv.repoName.c_str());
+                ImGui::TableSetColumnIndex(1); ImGui::TextUnformatted(doc.fileName.c_str());
+                ImGui::TableSetColumnIndex(2); ImGui::TextUnformatted(doc.curationTag.c_str());
+                ImGui::TableSetColumnIndex(3); ImGui::TextUnformatted(doc.includedInCorpus ? "Sim" : "Nao");
+                ImGui::TableSetColumnIndex(4); ImGui::Text("%d", doc.textBytes);
+                ImGui::TableSetColumnIndex(5); ImGui::TextUnformatted(doc.usedCache ? "Sim" : "Nao");
+                ImGui::TableSetColumnIndex(6);
+                const std::string shortHash = doc.sha256.empty() ? "-" : doc.sha256.substr(0, std::min<std::size_t>(12, doc.sha256.size()));
+                ImGui::TextUnformatted(shortHash.c_str());
+            }
+        }
+
+        ImGui::EndTable();
     }
 }
 
@@ -747,7 +1065,7 @@ void renderHelpModal(bool* showHelpModal) {
 
             if (ImGui::BeginTabItem("Abas")) {
                 ImGui::TextUnformatted("Projetos");
-                ImGui::BulletText("Tabela consolidada por projeto.");
+                ImGui::BulletText("Tabela consolidada por projeto cadastrado.");
                 ImGui::BulletText("Mostra Fluxo (Status) e Scores de Qualidade.");
                 ImGui::Separator();
                 ImGui::TextUnformatted("Kanban");
@@ -760,7 +1078,7 @@ void renderHelpModal(bool* showHelpModal) {
                 ImGui::Separator();
                 ImGui::TextUnformatted("Inventario");
                 ImGui::BulletText("Sinais detectados por repositorio/dossie.");
-                ImGui::BulletText("Fluxo (Status inferido) e colunas de qualidade.");
+                ImGui::BulletText("Serve como apoio de curadoria, sem criar projeto automaticamente.");
                 ImGui::EndTabItem();
             }
 
@@ -786,7 +1104,7 @@ void renderHelpModal(bool* showHelpModal) {
                 ImGui::BulletText("Inov: sinais de contribuicao para inovacao.");
                 ImGui::BulletText("Ativ: sinais de atividades de pesquisa.");
                 ImGui::BulletText("ResPrev: sinais de resultados previstos.");
-                ImGui::BulletText("Fluxo (Status inferido): etapa inferida automaticamente.");
+                ImGui::BulletText("Fluxo sugerido: etapa inferida automaticamente, apenas como apoio.");
                 ImGui::EndTabItem();
             }
             ImGui::EndTabBar();
@@ -809,12 +1127,19 @@ void GuiDashboard::render(
     const std::vector<domain::InventoryEntry>& inventory,
     const std::string& workspaceRoot,
     bool* requestRescan,
+    bool* requestExportInventory,
+    bool* requestSaveProjects,
+    bool* requestExit,
     std::string* requestApplyWorkspacePath,
+    std::string* requestProcessInnovationSourceRepoPath,
+    CreateProjectRequest* requestCreateProject,
+    UpdateProjectRequest* requestUpdateProject,
     const std::string& workspaceFeedback
 ) const {
     static ScorePerspective scorePerspective = ScorePerspective::Consolidated;
     bool requestOpenWorkspaceModal = false;
     bool requestOpenHelpModal = false;
+    std::string requestCreateFromSourceRepoPath;
 
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize, ImGuiCond_Always);
@@ -827,12 +1152,28 @@ void GuiDashboard::render(
 
     if (ImGui::BeginMenuBar()) {
         if (ImGui::BeginMenu("Arquivo")) {
-            if (ImGui::MenuItem("Selecionar pasta de projetos...")) {
+            if (ImGui::MenuItem("Selecionar pasta de trabalho...")) {
                 requestOpenWorkspaceModal = true;
             }
-            if (ImGui::MenuItem("Reescanear agora")) {
+            if (ImGui::MenuItem("Reescanear inventario de fontes")) {
                 if (requestRescan) {
                     *requestRescan = true;
+                }
+            }
+            if (ImGui::MenuItem("Exportar inventario")) {
+                if (requestExportInventory) {
+                    *requestExportInventory = true;
+                }
+            }
+            if (ImGui::MenuItem("Salvar projetos")) {
+                if (requestSaveProjects) {
+                    *requestSaveProjects = true;
+                }
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Sair")) {
+                if (requestExit) {
+                    *requestExit = true;
                 }
             }
             ImGui::EndMenu();
@@ -858,8 +1199,26 @@ void GuiDashboard::render(
         }
     }
     ImGui::SameLine();
+    if (ImGui::Button("Exportar Inventario")) {
+        if (requestExportInventory) {
+            *requestExportInventory = true;
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Salvar Projetos")) {
+        if (requestSaveProjects) {
+            *requestSaveProjects = true;
+        }
+    }
+    ImGui::SameLine();
     if (ImGui::Button("Ajuda")) {
         requestOpenHelpModal = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Sair")) {
+        if (requestExit) {
+            *requestExit = true;
+        }
     }
     if (!workspaceFeedback.empty()) {
         ImGui::TextColored(ImVec4(0.55f, 0.82f, 0.55f, 1.0f), "%s", workspaceFeedback.c_str());
@@ -877,7 +1236,6 @@ void GuiDashboard::render(
     if (requestOpenHelpModal) {
         m_showHelpModal = true;
     }
-
     if (m_showWorkspaceModal) {
         namespace fs = std::filesystem;
 
@@ -885,7 +1243,7 @@ void GuiDashboard::render(
         if (ImGui::BeginPopupModal("workspace_modal", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
             if (m_workspaceNavPath.empty()) m_workspaceNavPath = workspaceRoot;
 
-            ImGui::TextWrapped("Selecione a pasta que contem os repositorios de projetos:");
+            ImGui::TextWrapped("Selecione a pasta de trabalho onde estao os repositorios ou dossies que servirao como fontes:");
             ImGui::InputText("Caminho", m_workspacePathBuf.data(), m_workspacePathBuf.size());
 
             if (ImGui::Button("Ir para caminho digitado")) {
@@ -949,7 +1307,7 @@ void GuiDashboard::render(
 
     if (ImGui::BeginTabBar("labgp_tabs")) {
         if (ImGui::BeginTabItem("Projetos")) {
-            renderProjectsTab(projects, inventory, scorePerspective);
+            renderProjectsTab(projects, inventory, scorePerspective, requestUpdateProject, requestProcessInnovationSourceRepoPath);
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Kanban")) {
@@ -961,10 +1319,85 @@ void GuiDashboard::render(
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Inventario")) {
-            renderInventoryTab(inventory);
+            renderInventoryTab(
+                inventory,
+                &requestCreateFromSourceRepoPath,
+                requestProcessInnovationSourceRepoPath,
+                requestCreateProject
+            );
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Documentos")) {
+            renderDocumentsTab(inventory);
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
+    }
+
+    if (!requestCreateFromSourceRepoPath.empty()) {
+        m_showCreateProjectModal = true;
+        m_createProjectSourceRepoPath = requestCreateFromSourceRepoPath;
+        std::snprintf(m_projectIdBuf.data(), m_projectIdBuf.size(), "PRJ-%03d", static_cast<int>(projects.size()) + 1);
+        const domain::InventoryEntry* selectedSource = nullptr;
+        for (const auto& entry : inventory) {
+            if (entry.repoPath == requestCreateFromSourceRepoPath) {
+                selectedSource = &entry;
+                break;
+            }
+        }
+        const std::string defaultTitle = (selectedSource && !selectedSource->projectSnapshot.title.empty())
+            ? selectedSource->projectSnapshot.title
+            : (selectedSource ? selectedSource->repoName : "Novo Projeto");
+        const std::string defaultCoordinator = (selectedSource && !selectedSource->projectSnapshot.coordinator.empty())
+            ? selectedSource->projectSnapshot.coordinator
+            : "Coordenacao a definir";
+        const std::string defaultInstitution = (selectedSource && !selectedSource->projectSnapshot.institution.empty())
+            ? selectedSource->projectSnapshot.institution
+            : "Nao informado";
+        std::snprintf(m_projectTitleBuf.data(), m_projectTitleBuf.size(), "%s", defaultTitle.c_str());
+        std::snprintf(m_projectCoordinatorBuf.data(), m_projectCoordinatorBuf.size(), "%s", defaultCoordinator.c_str());
+        std::snprintf(m_projectInstitutionBuf.data(), m_projectInstitutionBuf.size(), "%s", defaultInstitution.c_str());
+        ImGui::OpenPopup("create_project_modal");
+    }
+
+    if (m_showCreateProjectModal) {
+        ImGui::SetNextWindowSize(ImVec2(620, 0), ImGuiCond_FirstUseEver);
+        if (ImGui::BeginPopupModal("create_project_modal", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextWrapped("Criar projeto manual a partir da fonte selecionada no inventario.");
+            ImGui::TextDisabled("%s", m_createProjectSourceRepoPath.c_str());
+            ImGui::InputText("ID", m_projectIdBuf.data(), m_projectIdBuf.size());
+            ImGui::InputText("Titulo", m_projectTitleBuf.data(), m_projectTitleBuf.size());
+            ImGui::InputText("Coordenacao", m_projectCoordinatorBuf.data(), m_projectCoordinatorBuf.size());
+            ImGui::InputText("Instituicao", m_projectInstitutionBuf.data(), m_projectInstitutionBuf.size());
+            ImGui::Spacing();
+            ImGui::TextDisabled("Os sinais da fonte selecionada serao usados como base inicial do projeto.");
+
+            const bool canCreate = m_projectIdBuf[0] != '\0' &&
+                                   m_projectTitleBuf[0] != '\0' &&
+                                   !m_createProjectSourceRepoPath.empty();
+            if (ImGui::Button("Criar Projeto")) {
+                if (canCreate && requestCreateProject) {
+                    requestCreateProject->sourceRepoPath = m_createProjectSourceRepoPath;
+                    requestCreateProject->projectId = m_projectIdBuf.data();
+                    requestCreateProject->projectTitle = m_projectTitleBuf.data();
+                    requestCreateProject->coordinator = m_projectCoordinatorBuf.data();
+                    requestCreateProject->institution = m_projectInstitutionBuf.data();
+                }
+                m_showCreateProjectModal = false;
+                m_createProjectSourceRepoPath.clear();
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancelar")) {
+                m_showCreateProjectModal = false;
+                m_createProjectSourceRepoPath.clear();
+                ImGui::CloseCurrentPopup();
+            }
+            if (!canCreate) {
+                ImGui::TextDisabled("Preencha ID e titulo para criar o projeto.");
+            }
+            ImGui::EndPopup();
+        }
     }
 
     ImGui::End();

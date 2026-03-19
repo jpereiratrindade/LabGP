@@ -1,49 +1,26 @@
 # DAI LabGP
 
-## Objetivo
-Formalizar `Decision`, `Action` e `Impediment` para garantir governanca leve e rastreavel.
+## Papel no projeto
+`DAI` em LabGP significa `Decision`, `Action` e `Impediment`.
+Ele existe como conceito de governanca leve para registrar operacao, acompanhamento e bloqueios
+sem substituir os artefatos estruturais do projeto.
 
-## Regras
-- Todo impedimento critico precisa de dono e prazo.
-- Toda decisao estrutural referencia ADR.
-- Toda mudanca de regra de dominio referencia DDD + teste.
+## Quando usar
+- registrar decisoes operacionais de curta ou media duracao
+- explicitar acoes em andamento e impedimentos relevantes
+- conectar execucao corrente com evidencias verificaveis
 
-## Estados
-- `Aberto`
-- `Em execucao`
-- `Resolvido`
-- `Escalado`
+## Como se relaciona com outros docs
+- `ADR`: decisoes arquiteturais e estruturais
+- `DDD`: regras e conceitos de dominio
+- `testes` e `commits`: evidencias de implementacao
 
-## Minimo de registro
-- contexto
-- decisao
-- acoes com responsavel
-- impedimentos
-- evidencias (commit/teste/doc)
+## Regras minimas
+- mudanca estrutural deve referenciar um `ADR`
+- mudanca de regra de dominio deve vir com teste e alinhamento ao `DDD`
+- impedimento critico precisa de responsavel e proximo passo claro
 
-## DAI Ativo - Curadoria PDF no Inventario
-
-### Contexto
-O LabGP passou a ingerir dossies PDF como fonte principal de conteudo no inventario.
-Precisamos garantir qualidade de inferencia, rastreabilidade e governanca da curadoria.
-
-### Decisao
-- Aplicar curadoria automatica por `curation_tag` + `relevance_score`.
-- Registrar resultado por documento em `manifest.tsv`.
-- Manter cache por hash para reproducibilidade e desempenho.
-- Referencia arquitetural: `ADR-0007-curadoria-documentos-pdf.md`.
-
-### Actions
-- [ ] Calibrar heuristicas de curadoria em amostra real de projetos (owner: Produto/Dominio, SLA: 5 dias uteis).
-- [ ] Definir limiar de qualidade minimo para status inferido (owner: Dominio, SLA: 5 dias uteis).
-- [ ] Incluir filtros por `curation_tag` na UI do Inventario (owner: UI, SLA: proxima iteracao).
-- [ ] Especificar estrategia de migracao de `manifest.tsv` para futuras versoes (owner: Arquitetura, SLA: 5 dias uteis).
-
-### Impediments
-- [ ] Base de dossies ainda pequena para medir falso positivo/falso negativo com confianca.
-- [ ] Ausencia de curadoria semantica por conteudo (fase 2).
-
-### Evidencias esperadas
-- Build e testes verdes.
-- `manifest.tsv` gerado por projeto com trilha completa dos PDFs.
-- Atualizacao de `DDD.md`, `UI_PARAMETERIZATION.md` e ADR.
+## Evidencias esperadas
+- build e testes executados quando aplicavel
+- documentacao atualizada somente quando sustenta o comportamento real do sistema
+- rastreabilidade suficiente para entender a decisao tomada
