@@ -20,6 +20,21 @@ LabGP is a C++ project for research project management, with emphasis on:
 - Update documentation only when it describes real behavior.
 - Keep commits and pull requests easy to review.
 
+## Local quality gates
+- Install local hooks once per clone:
+  - `./scripts/dev/install-git-hooks.sh`
+- Recommended local build directory for lint-enabled hooks:
+  - `cmake -S . -B build -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON`
+- The pre-commit hook formats staged source files and runs clang-tidy on staged `.cpp` when tooling and compile commands are available.
+
+## Architecture guardrail (CI)
+- New `.cpp` files are blocked in CI when they exceed line-limit or complexity-limit gates.
+- Current defaults in CI:
+  - max lines per new `.cpp`: `900`
+  - max cognitive complexity per function: `40`
+  - max function lines: `220`
+  - max function statements: `140`
+
 ## Review expectations
 - Changes that affect domain rules should include tests.
 - Changes that affect workflow or governance should include a short rationale.

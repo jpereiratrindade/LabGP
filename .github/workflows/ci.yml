@@ -66,6 +66,17 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
           -DLABGP_WARNINGS_AS_ERRORS=ON
+      - name: Architecture gate
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha }}
+          FALLBACK_BASE_REF: ${{ github.event.before }}
+          HEAD_REF: ${{ github.sha }}
+          BUILD_DIR: build-quality
+          MAX_CPP_LINES: "900"
+          COGNITIVE_THRESHOLD: "40"
+          FUNCTION_LINES_THRESHOLD: "220"
+          FUNCTION_STATEMENTS_THRESHOLD: "140"
+        run: ./scripts/ci/architecture_gate.sh
       - name: Build
         run: cmake --build build-quality --parallel
       - name: Format check

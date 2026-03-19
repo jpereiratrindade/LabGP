@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+mapfile -t staged_sources < <(git diff --cached --name-only --diff-filter=ACMR -- src include tests | grep -E '\.(cpp|hpp|h)$' || true)
+
+if [[ ${#staged_sources[@]} -eq 0 ]]; then
+    exit 0
+fi
+
+if ! command -v clang-format >/dev/null 2>&1; then
+    echo "[pre-commit] clang-format nao encontrado."
+    exit 1
+fi
+
+echo "[pre-commit] Formatando arquivos staged..."
+printf '%s\n' "${staged_sources[@]}" | xargs -r clang-format -i
+git add -- "${staged_sources[@]}"
+
+mapfile -t staged_cpp < <(printf '%s\n' "${staged_sources[@]}" | grep -E '\.cpp$' || true)
+if [[ ${#staged_cpp[@]} -eq 0 ]]; then
+    exit 0
+fi
+
+if ! command -v clang-tidy >/dev/null 2>&1; then
+    echo "[pre-commit] clang-tidy nao encontrado; lint local pulado."
+    exit 0
+fi
+
+if [[ ! -f build/compile_commands.json ]]; then
+    echo "[pre-commit] build/compile_commands.json nao encontrado; lint local pulado."
+    echo "[pre-commit] Dica: cmake -S . -B build -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
+    exit 0
+fi
+
+echo "[pre-commit] Executando clang-tidy nos .cpp staged..."
+for f in "${staged_cpp[@]}"; do
+    clang-tidy "$f" -p build --config-file=.clang-tidy --quiet
+done
