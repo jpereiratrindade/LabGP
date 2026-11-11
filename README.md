@@ -92,3 +92,9 @@ estao documentadas em:
 2. Kanban por fase
 3. Inventario e score de confiabilidade
 4. Grafo de relacoes entre projetos/repositorios
+
+## Premissas de desenvolvimento
+
+**Simples, leve. Sempre pronto. Sempre incompleto!**
+
+[Significado e símbolos das premissas](docs/sister-principles/README.md).
